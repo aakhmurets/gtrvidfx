@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Vocal Tracker - Recorder Edition</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* --- CORE STYLES --- */
+    body { 
+      margin: 0; background: #000000; 
+      color: #fff; 
+      overflow: hidden;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; 
+      font-family: 'Montserrat', sans-serif; 
+    }
+    
+    .container { position: relative; width: 100%; height: 100%; max-width: 1280px; max-height: 720px; }
+    
+    video { display: none; }
+    
+    canvas { 
+      position: absolute; left: 0; top: 0; width: 100%; height: 100%; 
+      object-fit: cover;
+      /* REMOVED CSS MIRRORING to ensure recording text is readable */
+      filter: contrast(115%) saturate(120%) brightness(0.85);
+    }
+
+    .container::after {
+      content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: radial-gradient(circle, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%);
+      pointer-events: none; z-index: 5;
+    }
+
+    #logs { 
+        position: absolute; bottom: 10px; left: 10px; 
+        color: #444; font-size: 10px; font-weight: 400; letter-spacing: 1px; z-index: 50; 
+    }
+
+    /* --- PREMIUM CONTROLS PANEL --- */
+    #controls {
+      position: absolute; 
+      right: 20px; top: 50%; transform: translateY(-50%);
+      width: 200px; max-height: 85vh; 
+      background: rgba(10, 10, 10, 0.85); backdrop-filter: blur(15px);
+      padding: 20px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex; flex-direction: column; gap: 0;
+      z-index: 10; opacity: 0; transition: opacity 0.5s; pointer-events: none;
+      overflow-y: auto; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    #controls::-webkit-scrollbar { width: 4px; }
+    #controls::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+    #controls.visible { opacity: 1; pointer-events: auto; }
+    
+    /* Section Dividers */
+    .section-header {
+        font-size: 10px; font-weight: 800; color: #666; 
+        text-transform: uppercase; letter-spacing: 2px;
+        margin-top: 15px; margin-bottom: 10px;
+        border-bottom: 1px solid #333; padding-bottom: 5px;
+    }
+    .section-header:first-child { margin-top: 0; }
+
+    .control-group { display: flex; flex-direction: column; width: 100%; margin-bottom: 12px; }
+    .control-group label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; color: #bbb; display: flex; justify-content: space-between;}
+    input[type=range] { width: 100%; cursor: pointer; accent-color: #0ff; height: 4px; border-radius: 2px; background: #333; appearance: none;}
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #0ff; margin-top: -4px;}
+    input[type=range]::-webkit-slider-runnable-track { height: 4px; background: #333; border-radius: 2px; }
+
+    /* Collapsible Logic */
+    .hidden-group { display: none; }
+    .fade-in { animation: fadeIn 0.3s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Switches */
+    .toggle-row {
+      display: flex; flex-direction: row; justify-content: space-between; align-items: center;
+      margin-bottom: 10px;
+    }
+    .toggle-text { font-size: 11px; font-weight: 700; color: #fff; }
+    
+    .switch { position: relative; display: inline-block; width: 34px; height: 18px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #333; transition: .3s; border-radius: 20px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 12px; width: 12px; left: 3px; bottom: 3px;
+      background-color: #888; transition: .3s; border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #0ff; }
+    input:checked + .slider:before { transform: translateX(16px); background-color: #000; }
+    
+    /* Mode Switch */
+    .mode-switch-container { display: flex; justify-content: center; margin-bottom: 5px; }
+    .mode-label { font-size: 10px; font-weight: 700; color: #555; margin: 0 8px; transition: color 0.3s; text-transform: uppercase;}
+    .mode-label.active { color: #0ff; text-shadow: 0 0 10px rgba(0,255,255,0.4); }
+
+    /* RECORD BUTTON STYLES */
+    .btn-record {
+        width: 100%; padding: 10px 0; border-radius: 8px; border: none;
+        font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+        background: #222; color: #fff; cursor: pointer; transition: all 0.2s;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        margin-top: 10px;
+    }
+    .btn-record:hover { background: #333; }
+    .btn-record.recording { background: #500; color: #fcc; box-shadow: 0 0 15px #f00; animation: pulse 1.5s infinite; }
+    .rec-dot { width: 8px; height: 8px; background: #f00; border-radius: 50%; }
+    .recording .rec-dot { background: #fff; }
+
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); } }
+
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <video id="input_video" playsinline></video>
+  <canvas id="output_canvas"></canvas>
+  <div id="logs">Initializing...</div>
+
+  <div id="controls">
+    
+    <div class="section-header">Recording</div>
+    <button id="btnRecord" class="btn-record">
+        <span class="rec-dot"></span> <span id="btnRecordText">Start Record</span>
+    </button>
+
+    <div class="section-header">Input Mode</div>
+    <div class="mode-switch-container">
+      <span id="labelSinger" class="mode-label active">Singer</span>
+      <label class="switch">
+        <input type="checkbox" id="modeToggle">
+        <span class="slider"></span>
+      </label>
+      <span id="labelGuitar" class="mode-label">Guitar</span>
+    </div>
+
+    <div class="section-header">Visuals</div>
+    
+    <div class="toggle-row">
+      <span class="toggle-text">Chaos Motion</span>
+      <label class="switch">
+        <input type="checkbox" id="chaosToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="control-group">
+      <label>Current Text Size</label>
+      <input type="range" id="sliderCurrentSize" min="10" max="150" value="40">
+    </div>
+    <div class="control-group">
+      <label>Current Opacity</label>
+      <input type="range" id="sliderCurrentOpacity" min="0" max="1" step="0.1" value="1.0">
+    </div>
+
+    <div class="control-group">
+      <label>Trail Text Size</label>
+      <input type="range" id="sliderTrailSize" min="10" max="120" value="25">
+    </div>
+    <div class="control-group">
+      <label>Trail Opacity</label>
+      <input type="range" id="sliderTrailOpacity" min="0" max="1" step="0.1" value="0.7">
+    </div>
+
+    <div class="section-header">FX</div>
+    <div class="toggle-row">
+      <span class="toggle-text">Particles</span>
+      <label class="switch">
+        <input type="checkbox" id="partToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div id="groupParticlesSettings" class="fade-in">
+      <div class="control-group">
+        <label>Size</label>
+        <input type="range" id="sliderPartSize" min="0.5" max="15" step="0.5" value="1.5">
+      </div>
+      <div class="control-group">
+        <label>Opacity</label>
+        <input type="range" id="sliderPartOpacity" min="0" max="1" step="0.1" value="1.0">
+      </div>
+    </div>
+
+    <div id="groupHands" class="hidden-group fade-in">
+      <div class="section-header">Hand Tracking</div>
+      <div class="control-group">
+        <label>Wireframe Size</label>
+        <input type="range" id="sliderHandSize" min="0.5" max="15" step="0.5" value="4">
+      </div>
+      <div class="control-group">
+        <label>Wireframe Opacity</label>
+        <input type="range" id="sliderHandOpacity" min="0" max="1" step="0.1" value="0.8">
+      </div>
+      <div class="toggle-row" style="margin-top:10px;">
+        <span class="toggle-text">Visual Assist</span>
+        <label class="switch">
+          <input type="checkbox" id="visualAssistToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    
+    <div class="section-header">Sensitivity</div>
+    <div class="control-group">
+      <label>Noise Gate Threshold</label>
+      <input type="range" id="sliderGate" min="1" max="50" step="1" value="15">
+    </div>
+
+  </div>
+</div>
+
+<script>
+  console.log(">>> BUILD: RECORDING ENABLED (NATIVE MIRROR)");
+
+  const videoElement = document.getElementById('input_video');
+  const canvasElement = document.getElementById('output_canvas');
+  const canvasCtx = canvasElement.getContext('2d');
+  const logDiv = document.getElementById('logs');
+  const controlsDiv = document.getElementById('controls');
+
+  // --- CONFIG ---
+  let cfg = { 
+      currentSize: 40, currentOpacity: 1.0, 
+      trailSize: 25, trailOpacity: 0.7,
+      partSize: 1.5, partOpacity: 1.0,
+      handSize: 4, handOpacity: 0.8,
+      noiseGate: 15
+  };
+  let isGuitarMode = false;
+  let isChaosMode = false;
+  let isParticlesEnabled = true;
+  let isVisualAssistEnabled = true;
+
+  // --- UI LOGIC ---
+  const groupHands = document.getElementById('groupHands');
+  const groupPartSettings = document.getElementById('groupParticlesSettings');
+
+  document.getElementById('sliderCurrentSize').oninput = (e) => cfg.currentSize = parseInt(e.target.value);
+  document.getElementById('sliderCurrentOpacity').oninput = (e) => cfg.currentOpacity = parseFloat(e.target.value);
+  document.getElementById('sliderTrailSize').oninput = (e) => cfg.trailSize = parseInt(e.target.value);
+  document.getElementById('sliderTrailOpacity').oninput = (e) => cfg.trailOpacity = parseFloat(e.target.value);
+  document.getElementById('sliderPartSize').oninput = (e) => cfg.partSize = parseFloat(e.target.value);
+  document.getElementById('sliderPartOpacity').oninput = (e) => cfg.partOpacity = parseFloat(e.target.value);
+  document.getElementById('sliderHandSize').oninput = (e) => cfg.handSize = parseFloat(e.target.value);
+  document.getElementById('sliderHandOpacity').oninput = (e) => cfg.handOpacity = parseFloat(e.target.value);
+  document.getElementById('sliderGate').oninput = (e) => cfg.noiseGate = parseInt(e.target.value);
+
+  const modeToggle = document.getElementById('modeToggle');
+  modeToggle.onchange = (e) => {
+      isGuitarMode = e.target.checked;
+      document.getElementById('labelSinger').className = isGuitarMode ? 'mode-label' : 'mode-label active';
+      document.getElementById('labelGuitar').className = isGuitarMode ? 'mode-label active' : 'mode-label';
+      groupHands.style.display = isGuitarMode ? 'block' : 'none';
+      lastKnownHandX = -1; 
+      lastKnownHandY = -1;
+      displayNote = "";
+      if(analyser) analyser.fftSize = isGuitarMode ? 8192 : 2048;
+  };
+
+  const chaosToggle = document.getElementById('chaosToggle');
+  chaosToggle.onchange = (e) => { isChaosMode = e.target.checked; };
+
+  const partToggle = document.getElementById('partToggle');
+  partToggle.onchange = (e) => {
+      isParticlesEnabled = e.target.checked;
+      groupPartSettings.style.display = isParticlesEnabled ? 'block' : 'none';
+  };
+   
+  const visualAssistToggle = document.getElementById('visualAssistToggle');
+  visualAssistToggle.onchange = (e) => { isVisualAssistEnabled = e.target.checked; };
+
+  let lastKnownHandX = -1; 
+  let lastKnownHandY = -1;
+  let hands, faceMesh, camera, audioContext, analyser, filterLow, filterHigh, globalStream;
+  let noteTrail = []; 
+  let particles = []; 
+  let lastRenderedNote = ""; 
+  let activeNotePopScale = 0.2; 
+  let activeNoteStartTime = 0;  
+  let currentHue = 0;
+
+  // --- RECORDING VARIABLES ---
+  let mediaRecorder;
+  let recordedChunks = [];
+  const btnRecord = document.getElementById('btnRecord');
+  const btnRecordText = document.getElementById('btnRecordText');
+
+  btnRecord.onclick = toggleRecording;
+
+  function toggleRecording() {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+          btnRecord.classList.remove("recording");
+          btnRecordText.innerText = "Start Record";
+      } else {
+          startRecording();
+      }
+  }
+
+  function startRecording() {
+      if (!globalStream) return;
+
+      const canvasStream = canvasElement.captureStream(30); // 30 FPS
+      // Mix audio from Mic with Video from Canvas
+      const combinedStream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...globalStream.getAudioTracks()
+      ]);
+
+      recordedChunks = [];
+      try {
+          mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm; codecs=vp9' });
+      } catch (e) {
+          mediaRecorder = new MediaRecorder(combinedStream); // Fallback
+      }
+
+      mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) recordedChunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = saveRecording;
+
+      mediaRecorder.start();
+      btnRecord.classList.add("recording");
+      btnRecordText.innerText = "Stop Record";
+  }
+
+  function saveRecording() {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      document.body.appendChild(a);
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `vocal-tracker-${Date.now()}.webm`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      log("Video saved to Downloads!");
+  }
+
+
+  function log(msg) { logDiv.innerText = msg; }
+
+  const noteStrings = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  
+  let displayNote = "";
+  let candidateNote = "";
+  let candidateStartTime = 0;
+  let activeChordNotes = []; 
+
+  // --- GUITAR STABILIZATION VARS ---
+  let guitarCandidate = "";
+  let guitarCandidateTime = 0;
+  const GUITAR_LOCK_TIME = 70; 
+
+  function noteFromPitch(frequency) {
+    const noteNum = 12 * (Math.log(frequency / 440) / Math.log(2));
+    return Math.round(noteNum) + 69;
+  }
+
+  function autoCorrelate(buf, sampleRate) {
+    let SIZE = buf.length;
+    let rms = 0;
+    for (let i=0; i<SIZE; i++) { let val = buf[i]; rms += val*val; }
+    rms = Math.sqrt(rms/SIZE);
+    if (rms < (cfg.noiseGate / 500.0)) return -1; 
+    let r1=0, r2=SIZE-1, thres=0.2;
+    for (let i=0; i<SIZE/2; i++) if (Math.abs(buf[i]) < thres) { r1=i; break; }
+    for (let i=1; i<SIZE/2; i++) if (Math.abs(buf[SIZE-i]) < thres) { r2=SIZE-i; break; }
+    buf = buf.slice(r1, r2);
+    SIZE = buf.length;
+    let c = new Array(SIZE).fill(0);
+    for (let i=0; i<SIZE; i++) for (let j=0; j<SIZE-i; j++) c[i] = c[i] + buf[j]*buf[j+i];
+    let d=0; while (c[d]>c[d+1]) d++;
+    let maxval=-1, maxpos=-1;
+    for (let i=d; i<SIZE; i++) { if (c[i] > maxval) { maxval = c[i]; maxpos = i; } }
+    return sampleRate/maxpos;
+  }
+
+  function detectGuitarChords(handXNorm) {
+      if (!analyser) return [];
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteFrequencyData(dataArray);
+
+      let chroma = new Array(12).fill(0);
+      const binFreq = audioContext.sampleRate / analyser.fftSize;
+      
+      let startFreq = 75; 
+      let endFreq = 1200;
+      const startBin = Math.floor(startFreq / binFreq);
+      const endBin = Math.floor(endFreq / binFreq);
+
+      for(let i = startBin; i < endBin; i++) {
+          let val = dataArray[i];
+          let gateThreshold = 60 + (cfg.noiseGate * 2); 
+          
+          if(val > gateThreshold) { 
+             if (val > dataArray[i-1] && val > dataArray[i+1]) {
+                 
+                 let harmonicIndex = i * 2;
+                 let harmonicVal = (harmonicIndex < bufferLength) ? dataArray[harmonicIndex] : 0;
+                 let harmonicBonus = (harmonicVal > (val * 0.4)) ? 1.5 : 1.0; 
+
+                 let visualWeight = 1.0;
+                 if (isVisualAssistEnabled && handXNorm >= 0) {
+                     let freq = i * binFreq;
+                     // NOTE: handXNorm is flipped (1-x) for calculation to match screen
+                     let expectedFreq = 80 + (handXNorm * 700); 
+                     let dist = Math.abs(freq - expectedFreq);
+                     if (dist < 150) visualWeight = 1.5; 
+                     else if (dist > 400) visualWeight = 0.6; 
+                 }
+
+                 let freq = i * binFreq;
+                 let noteNum = noteFromPitch(freq);
+                 let chromaIndex = noteNum % 12;
+                 
+                 chroma[chromaIndex] += val * harmonicBonus * visualWeight;
+             }
+          }
+      }
+
+      let peak = 0;
+      for(let c of chroma) if(c > peak) peak = c;
+      if(peak < 150) return { notes: [], dominant: "" }; 
+
+      let threshold = peak * 0.90; 
+      let detectedNotes = [];
+      let dominantNote = ""; 
+      
+      for(let i=0; i<12; i++) {
+          if(chroma[i] >= threshold) {
+             let n = noteStrings[i];
+             detectedNotes.push(n);
+             if(chroma[i] === peak) dominantNote = n;
+          }
+      }
+      
+      return { notes: detectedNotes, dominant: dominantNote };
+  }
+
+  function updatePitch() {
+    if (!analyser) return;
+
+    if (isGuitarMode) {
+        let normX = -1;
+        if (lastKnownHandX !== -1) {
+            // Invert X because visuals are mirrored
+            normX = 1.0 - (lastKnownHandX / canvasElement.width);
+        }
+
+        let result = detectGuitarChords(normX);
+        const now = Date.now();
+
+        if (result.dominant !== "") {
+            if (result.dominant !== guitarCandidate) {
+                guitarCandidate = result.dominant;
+                guitarCandidateTime = now;
+            } else {
+                if (now - guitarCandidateTime > GUITAR_LOCK_TIME) {
+                    displayNote = guitarCandidate;
+                    activeChordNotes = result.notes;
+                    let noteIndex = noteStrings.indexOf(displayNote);
+                    if(noteIndex > -1) currentHue = noteIndex * 30;
+                }
+            }
+        } else {
+            if (now - guitarCandidateTime > 100) {
+                 activeChordNotes = [];
+                 if(now - activeNoteStartTime > 300) displayNote = "";
+            }
+        }
+    } else {
+        const buf = new Float32Array(1024);
+        analyser.getFloatTimeDomainData(buf);
+        const ac = autoCorrelate(buf, audioContext.sampleRate);
+        const now = Date.now();
+        const lockThreshold = 30;
+        const releaseThreshold = 50;
+
+        let instantNote = "";
+        if (ac !== -1 && ac > 60 && ac < 2000) {
+           const noteNum = noteFromPitch(ac);
+           const noteIndex = noteNum % 12;
+           currentHue = noteIndex * 30; 
+           instantNote = noteStrings[noteIndex]; 
+        }
+
+        if (instantNote === candidateNote) {
+            if ((now - candidateStartTime) > lockThreshold) displayNote = candidateNote; 
+        } else {
+            candidateNote = instantNote;
+            candidateStartTime = now;
+        }
+        if (instantNote === "" && (now - candidateStartTime) > releaseThreshold) displayNote = "";
+        
+        activeChordNotes = displayNote ? [displayNote] : [];
+    }
+    
+    requestAnimationFrame(updatePitch);
+  }
+
+  function spawnParticles(x, y, hue) {
+      if (!isParticlesEnabled) return; 
+      for(let i=0; i<8; i++) {
+          particles.push({
+              x: x, y: y,
+              vx: (Math.random() - 0.5) * 12,
+              vy: (Math.random() - 0.5) * 12,
+              life: 1.0,
+              hue: hue
+          });
+      }
+  }
+
+  function updateAndDrawParticles(ctx, dpr) {
+      for (let i = particles.length - 1; i >= 0; i--) {
+          let p = particles[i];
+          p.x += p.vx * (dpr > 1 ? 1.5 : 1); 
+          p.y += p.vy * (dpr > 1 ? 1.5 : 1);
+          p.life -= 0.04; 
+          if(p.life <= 0) {
+              particles.splice(i, 1);
+          } else {
+              ctx.save();
+              ctx.fillStyle = `hsla(${p.hue}, 100%, 70%, ${p.life * cfg.partOpacity})`;
+              ctx.shadowColor = `hsla(${p.hue}, 100%, 50%, 1.0)`;
+              ctx.shadowBlur = 5 * dpr;
+              ctx.beginPath();
+              let currentSize = (cfg.partSize * dpr) * p.life;
+              ctx.arc(p.x, p.y, currentSize, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+          }
+      }
+  }
+
+  function spawnChordCluster(notes, dominant, x, y, durationScaleMult, hue) {
+      let vx, vy;
+      if (isChaosMode) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 3.0 + Math.random() * 4.0;
+          vx = Math.cos(angle) * speed;
+          vy = Math.sin(angle) * speed;
+      } else {
+          vx = 4.5 + Math.random() * 3.0;
+          vy = -3.0 + (Math.random() * 5.0 - 2.5);
+      }
+
+      noteTrail.push({
+          type: 'cluster',
+          dominant: dominant,
+          notes: notes, 
+          x: x, y: y,
+          vx: vx, vy: vy,      
+          scale: 1.5,
+          durationMult: durationScaleMult, 
+          alpha: 1.0, 
+          hue: hue
+      });
+  }
+
+  function updateAndDrawNoteTrail(ctx, dpr) {
+      const DRAG = 0.96; 
+      let congestionFactor = 1.0 + (noteTrail.length / 10.0);
+      if (congestionFactor > 4.0) congestionFactor = 4.0; 
+      const speedMod = (dpr > 1 ? 2 : 1) * congestionFactor;
+
+      for (let i = noteTrail.length - 1; i >= 0; i--) {
+          let item = noteTrail[i];
+          if(!isChaosMode) {
+              item.vx *= DRAG; item.vy *= DRAG;
+          } else {
+              item.vx *= 0.98; item.vy *= 0.98; 
+          }
+          item.x += (item.vx + (isChaosMode ? 0 : 1.2)) * speedMod; 
+          item.y += item.vy * speedMod; 
+          item.alpha -= 0.02; 
+          item.scale *= 0.98; 
+          if (item.alpha <= 0) noteTrail.splice(i, 1);
+      }
+
+      ctx.save();
+      ctx.textAlign = "center";
+      const baseTrailPixelSize = cfg.trailSize * dpr; 
+
+      for (let i = 0; i < noteTrail.length; i++) {
+          let item = noteTrail[i];
+          ctx.save();
+          ctx.globalAlpha = item.alpha * cfg.trailOpacity; 
+          ctx.translate(item.x, item.y);
+          // Standard Scale (No flip) because canvas is already mirrored via JS
+          ctx.scale(item.scale, item.scale); 
+          ctx.shadowColor = `hsla(${item.hue}, 100%, 50%, 0.5)`;
+          ctx.shadowBlur = 10 * dpr;
+          ctx.fillStyle = "#ffffff";
+          
+          let finalSize = baseTrailPixelSize * item.durationMult;
+          
+          ctx.font = `900 ${finalSize}px 'Montserrat'`; 
+          ctx.fillText(item.dominant, 0, 0);
+
+          if (item.notes.length > 1) {
+              let satelliteSize = finalSize * 0.5;
+              ctx.font = `700 ${satelliteSize}px 'Montserrat'`;
+              let radius = finalSize * 1.2;
+              
+              let satellites = item.notes.filter(n => n !== item.dominant);
+              let angleStep = (Math.PI * 2) / satellites.length;
+
+              satellites.forEach((note, index) => {
+                  let angle = (index * angleStep) - (Math.PI / 2); 
+                  let sx = Math.cos(angle) * radius;
+                  let sy = Math.sin(angle) * radius;
+                  ctx.fillText(note, sx, sy);
+              });
+          }
+          
+          ctx.restore();
+      }
+      ctx.restore();
+  }
+
+  function getDurationScale(startTime) {
+      const duration = Date.now() - startTime;
+      const rawScale = 0.5 + (duration / 1000);
+      return Math.min(Math.max(rawScale, 0.5), 1.5);
+  }
+
+  function handleNoteDisplay(x, y, dpr) {
+      if (displayNote !== lastRenderedNote) {
+          if (lastRenderedNote !== "") {
+              const finalDurationScale = getDurationScale(activeNoteStartTime);
+              let notesToSpawn = (activeChordNotes.length > 0) ? activeChordNotes : [lastRenderedNote];
+              spawnChordCluster(notesToSpawn, lastRenderedNote, x, y, finalDurationScale, currentHue);
+          }
+
+          if (displayNote !== "") {
+              activeNotePopScale = 0.2; 
+              activeNoteStartTime = Date.now(); 
+              spawnParticles(x, y, currentHue);
+          }
+          lastRenderedNote = displayNote;
+      }
+
+      if (displayNote) {
+          if (activeNotePopScale < 1.0) {
+              activeNotePopScale += (1.15 - activeNotePopScale) * 0.3; 
+              if (activeNotePopScale > 1.05) activeNotePopScale = 1.0;
+          }
+          const durationScale = getDurationScale(activeNoteStartTime);
+          const combinedScale = activeNotePopScale * durationScale;
+
+          canvasCtx.save();
+          canvasCtx.translate(x, y);
+          // Removed Horizontal Flip here so text reads correctly
+          canvasCtx.scale(combinedScale, combinedScale); 
+          
+          const fontSize = cfg.currentSize * dpr;
+          
+          ctx = canvasCtx;
+          ctx.shadowColor = `hsla(${currentHue}, 100%, 50%, 1.0)`;
+          ctx.shadowBlur = 25 * dpr; 
+          ctx.fillStyle = "#ffffff"; 
+          ctx.globalAlpha = cfg.currentOpacity;
+
+          ctx.font = `900 ${fontSize}px 'Montserrat'`; 
+          ctx.textAlign = "center";
+          ctx.fillText(displayNote, 0, 0);
+
+          if (activeChordNotes.length > 1) {
+              let satelliteSize = fontSize * 0.5;
+              ctx.font = `700 ${satelliteSize}px 'Montserrat'`;
+              let radius = fontSize * 1.2;
+              let satellites = activeChordNotes.filter(n => n !== displayNote);
+              let angleStep = (Math.PI * 2) / satellites.length;
+
+              satellites.forEach((note, index) => {
+                  let angle = (index * angleStep) - (Math.PI / 2);
+                  let sx = Math.cos(angle) * radius;
+                  let sy = Math.sin(angle) * radius;
+                  ctx.fillText(note, sx, sy);
+              });
+          }
+
+          canvasCtx.restore();
+      } else {
+          activeNotePopScale = 1.0; 
+      }
+  }
+
+  function drawFingersOnly(ctx, landmarks, dpr, hue, opacity) {
+     ctx.save();
+     // Hand coords are for non-flipped image. 
+     // We flipped the canvas image, so we must flip the context to match coords.
+     ctx.translate(canvasElement.width, 0);
+     ctx.scale(-1, 1);
+
+     ctx.shadowColor = `hsla(${hue}, 100%, 50%, 0.8)`;
+     ctx.shadowBlur = 15 * dpr; 
+     ctx.lineWidth = cfg.handSize * dpr; 
+     ctx.strokeStyle = `hsla(${hue}, 100%, 70%, ${opacity})`;
+     ctx.fillStyle = "#fff";
+     const chains = [[0, 5, 6, 7, 8], [0, 9, 10, 11, 12], [0, 13, 14, 15, 16], [0, 17, 18, 19, 20], [5, 9, 13, 17]];
+     ctx.beginPath();
+     for (let chain of chains) {
+        let start = landmarks[chain[0]];
+        ctx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
+        for(let i=1; i<chain.length; i++) {
+           let pt = landmarks[chain[i]];
+           ctx.lineTo(pt.x * canvasElement.width, pt.y * canvasElement.height);
+        }
+     }
+     ctx.stroke();
+     const tips = [8, 12, 16, 20];
+     for (let i of tips) {
+         let lm = landmarks[i];
+         ctx.beginPath();
+         ctx.arc(lm.x * canvasElement.width, lm.y * canvasElement.height, (cfg.handSize * 0.8) * dpr, 0, 2 * Math.PI);
+         ctx.fill();
+     }
+     ctx.restore();
+  }
+
+  function prepCanvas(image) {
+    const videoW = videoElement.videoWidth;
+    const videoH = videoElement.videoHeight;
+    const dpr = window.devicePixelRatio || 1;
+    if (canvasElement.width !== videoW * dpr || canvasElement.height !== videoH * dpr) {
+        canvasElement.width = videoW * dpr;
+        canvasElement.height = videoH * dpr;
+        canvasElement.style.width = videoW + 'px';
+        canvasElement.style.height = videoH + 'px';
+    }
+    canvasCtx.save();
+    // JS MIRRORING: Flip the video horizontally here
+    canvasCtx.translate(canvasElement.width, 0);
+    canvasCtx.scale(-1, 1);
+    canvasCtx.drawImage(image, 0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.restore();
+    return dpr;
+  }
+
+  function onSingerResults(results) {
+      if(isGuitarMode) return; 
+      const dpr = prepCanvas(results.image);
+      updateAndDrawParticles(canvasCtx, dpr);
+      updateAndDrawNoteTrail(canvasCtx, dpr);
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+          const landmarks = results.multiFaceLandmarks[0];
+          // Invert X because the image was flipped
+          const rawX = (landmarks[13].x + landmarks[14].x) / 2;
+          const mouthX = (1.0 - rawX) * canvasElement.width;
+          const mouthY = (landmarks[13].y + landmarks[14].y) / 2 * canvasElement.height;
+          handleNoteDisplay(mouthX, mouthY, dpr);
+      }
+      canvasCtx.restore();
+  }
+
+  function onGuitarResults(results) {
+      if(!isGuitarMode) return; 
+      const dpr = prepCanvas(results.image);
+      let guitarHandFound = false;
+      let activeHandX = 0, activeHandY = 0;
+
+      if (results.multiHandLandmarks) {
+          for (const [index, landmarks] of results.multiHandLandmarks.entries()) {
+              if (cfg.handOpacity > 0) drawFingersOnly(canvasCtx, landmarks, dpr, currentHue, cfg.handOpacity);
+              const label = results.multiHandedness[index].label;
+              if (label === 'Left') {
+                  // Invert X
+                  activeHandX = (1.0 - landmarks[8].x) * canvasElement.width;
+                  activeHandY = landmarks[8].y * canvasElement.height;
+                  guitarHandFound = true;
+                  lastKnownHandX = activeHandX;
+                  lastKnownHandY = activeHandY;
+              }
+          }
+          if (!guitarHandFound && results.multiHandLandmarks.length > 0) {
+              const lm = results.multiHandLandmarks[0];
+              activeHandX = (1.0 - lm[8].x) * canvasElement.width;
+              activeHandY = lm[8].y * canvasElement.height;
+              guitarHandFound = true;
+              lastKnownHandX = activeHandX;
+              lastKnownHandY = activeHandY;
+          }
+      }
+
+      updateAndDrawParticles(canvasCtx, dpr);
+      updateAndDrawNoteTrail(canvasCtx, dpr);
+
+      if (guitarHandFound) {
+          handleNoteDisplay(activeHandX, activeHandY, dpr);
+      } else if (lastKnownHandX !== -1) {
+          handleNoteDisplay(lastKnownHandX, lastKnownHandY, dpr);
+      }
+      canvasCtx.restore();
+  }
+
+  async function initApp() {
+      try {
+          // PROMPT FOR STREAM
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          globalStream = stream; // Save for recording
+
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          
+          const source = audioContext.createMediaStreamSource(stream);
+          filterLow = audioContext.createBiquadFilter();
+          filterLow.type = 'highpass';
+          filterLow.frequency.value = 80; 
+
+          filterHigh = audioContext.createBiquadFilter();
+          filterHigh.type = 'lowpass';
+          filterHigh.frequency.value = 3000; 
+
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 2048; 
+          
+          source.connect(filterLow);
+          filterLow.connect(filterHigh);
+          filterHigh.connect(analyser);
+
+          updatePitch();
+
+          videoElement.srcObject = stream; await videoElement.play();
+          
+          log("Loading AI Models...");
+          hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+          hands.setOptions({ maxNumHands: 2, modelComplexity: 1 });
+          hands.onResults(onGuitarResults);
+
+          faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+          faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true });
+          faceMesh.onResults(onSingerResults);
+
+          camera = new Camera(videoElement, {
+            onFrame: async () => { 
+                if (isGuitarMode) await hands.send({image: videoElement}); 
+                else await faceMesh.send({image: videoElement}); 
+            },
+            width: 1280, height: 720
+          });
+          
+          await camera.start();
+          controlsDiv.classList.add('visible');
+          log("");
+
+      } catch (e) {
+          console.error(e); alert("Startup Error: " + e.message);
+      }
+  }
+
+  window.onload = () => {
+      initApp();
+      document.body.onclick = () => {
+          if(audioContext && audioContext.state === 'suspended') audioContext.resume();
+      }
+  };
+
+</script>
+
+</body>
+</html>
