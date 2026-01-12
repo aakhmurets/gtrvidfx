@@ -381,88 +381,54 @@
     [5, 9], [9, 13], [13, 17]                 // Palm connections
   ];
 
-  // Triangle faces for a complete glove-like hand mesh
+  // Triangle faces for glove with SEPARATED fingers (no webbing between)
   const HAND_TRIANGLES = [
-    // === PALM (Complete surface coverage) ===
-    // Wrist to palm base
-    [0, 1, 5], [0, 5, 17], [0, 17, 1],
+    // === PALM (Minimal base structure only) ===
+    [0, 1, 5], [0, 5, 9], [0, 9, 13], [0, 13, 17],
+    [5, 9, 13], [5, 13, 17],
 
-    // Palm quadrants (creating full palm surface)
-    [0, 5, 9], [5, 6, 9], [6, 9, 10], [9, 10, 6],
-    [0, 9, 13], [9, 10, 13], [10, 13, 14], [13, 14, 10],
-    [0, 13, 17], [13, 14, 17], [14, 17, 18], [17, 18, 14],
+    // === THUMB (Separate finger) ===
+    [1, 2, 3], [1, 3, 4],
+    [0, 1, 2], [0, 2, 3], [0, 3, 4],
 
-    // Palm center connections (fill remaining gaps)
-    [5, 9, 6], [6, 9, 10],
-    [9, 13, 10], [10, 13, 14],
-    [13, 17, 14], [14, 17, 18],
+    // === INDEX FINGER (Landmark chain: 5->6->7->8) ===
+    // Segment 5-6
+    [5, 6, 0],
+    // Segment 6-7
+    [6, 7, 5],
+    // Segment 7-8
+    [7, 8, 6], [8, 6, 5],
 
-    // === THUMB (Volumetric segments) ===
-    // Base to knuckle
-    [0, 1, 2], [1, 2, 5],
-    [2, 3, 5], [1, 2, 3],
-    // Knuckle to tip
-    [2, 3, 4], [3, 4, 5],
-    [1, 4, 5], [1, 3, 4],
+    // === MIDDLE FINGER (Landmark chain: 9->10->11->12) ===
+    // Segment 9-10
+    [9, 10, 0],
+    // Segment 10-11
+    [10, 11, 9],
+    // Segment 11-12
+    [11, 12, 10], [12, 10, 9],
 
-    // === INDEX FINGER (Complete tubes) ===
-    // Palm to base knuckle
-    [5, 6, 9], [6, 9, 10],
-    // Each segment as tubes
-    [5, 6, 7], [6, 7, 8],
-    [6, 7, 9], [7, 9, 10],
-    [7, 8, 10], [8, 10, 11],
-    [10, 11, 9], [9, 11, 12],
-    [11, 12, 8], [8, 12, 7],
+    // === RING FINGER (Landmark chain: 13->14->15->16) ===
+    // Segment 13-14
+    [13, 14, 0],
+    // Segment 14-15
+    [14, 15, 13],
+    // Segment 15-16
+    [15, 16, 14], [16, 14, 13],
 
-    // === MIDDLE FINGER (Complete tubes) ===
-    // Palm to base
-    [9, 10, 13], [10, 13, 14],
-    // Segments
-    [9, 10, 11], [10, 11, 12],
-    [10, 11, 13], [11, 13, 14],
-    [11, 12, 14], [12, 14, 15],
-    [14, 15, 13], [13, 15, 16],
-    [15, 16, 12], [12, 16, 11],
+    // === PINKY (Landmark chain: 17->18->19->20) ===
+    // Segment 17-18
+    [17, 18, 0],
+    // Segment 18-19
+    [18, 19, 17],
+    // Segment 19-20
+    [19, 20, 18], [20, 18, 17],
 
-    // === RING FINGER (Complete tubes) ===
-    // Palm to base
-    [13, 14, 17], [14, 17, 18],
-    // Segments
-    [13, 14, 15], [14, 15, 16],
-    [14, 15, 17], [15, 17, 18],
-    [15, 16, 18], [16, 18, 19],
-    [18, 19, 17], [17, 19, 20],
-    [19, 20, 16], [16, 20, 15],
+    // === FINGER BASES (Connect to palm knuckles ONLY, no cross-finger connections) ===
+    [0, 5, 6], [0, 9, 10], [0, 13, 14], [0, 17, 18],
 
-    // === PINKY (Complete tubes) ===
-    // Palm to base
-    [17, 18, 0], [0, 18, 1],
-    // Segments
-    [17, 18, 19], [18, 19, 20],
-    [18, 19, 17], [17, 19, 0],
-    [19, 20, 0], [0, 20, 1],
-    [20, 1, 19], [1, 19, 18],
-
-    // === FINGER WEBBING (Fill gaps between fingers) ===
-    // Thumb-Index web
-    [1, 5, 6], [1, 2, 6], [2, 6, 7],
-    // Index-Middle web
-    [6, 10, 11], [6, 7, 11],
-    // Middle-Ring web
-    [10, 14, 15], [10, 11, 15],
-    // Ring-Pinky web
-    [14, 18, 19], [14, 15, 19],
-
-    // === BACK OF HAND (Mirror surface for volume) ===
-    // Back palm surface
-    [0, 5, 9], [5, 9, 13], [9, 13, 17],
-    [5, 6, 10], [6, 10, 14], [10, 14, 18],
-
-    // Finger backs (connecting segments for solid appearance)
-    [6, 7, 11], [7, 11, 12],
-    [10, 11, 15], [11, 15, 16],
-    [14, 15, 19], [15, 19, 20],
+    // === BACK OF HAND (Flat palm back, NO finger tubes) ===
+    [5, 9, 13], [5, 13, 17],
+    [1, 5, 17],
   ];
 
   // UI Controls
