@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pitch Probability Overlay</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      color: #fff;
+      overflow: hidden;
+      font-family: 'Montserrat', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    .container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 1280px;
+      max-height: 720px;
+    }
+
+    video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    #overlay {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #noteDisplay {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 3;
+      text-align: center;
+      width: 80%;
+      max-width: 600px;
+    }
+
+    .note-probability {
+      display: flex;
+      align-items: center;
+      margin: 8px 0;
+      background: rgba(0, 0, 0, 0.6);
+      border-radius: 8px;
+      padding: 8px 12px;
+      backdrop-filter: blur(10px);
+      transition: all 0.2s;
+    }
+
+    .note-name {
+      font-size: 24px;
+      font-weight: 800;
+      width: 60px;
+      text-align: left;
+    }
+
+    .probability-bar {
+      flex: 1;
+      height: 30px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      margin: 0 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .probability-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff006e, #8338ec, #3a86ff, #06ffa5);
+      border-radius: 4px;
+      transition: width 0.15s ease-out;
+      box-shadow: 0 0 20px currentColor;
+    }
+
+    .probability-value {
+      font-size: 16px;
+      font-weight: 600;
+      width: 60px;
+      text-align: right;
+    }
+
+    #info {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 15px 20px;
+      border-radius: 10px;
+      font-size: 12px;
+      z-index: 10;
+    }
+
+    #info h2 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      color: #0ff;
+    }
+
+    #controls {
+      position: absolute;
+      right: 20px;
+      top: 20px;
+      background: rgba(10, 10, 10, 0.9);
+      backdrop-filter: blur(15px);
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 10;
+      width: 220px;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+    }
+
+    .control-group label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      color: #bbb;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    input[type=range] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #0ff;
+      height: 4px;
+      border-radius: 2px;
+      background: #333;
+      appearance: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: #0ff;
+    }
+
+    .value-display {
+      color: #0ff;
+      font-weight: 700;
+    }
+
+    .section-header {
+      font-size: 10px;
+      font-weight: 800;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 15px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 5px;
+    }
+
+    .section-header:first-child {
+      margin-top: 0;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <video id="input_video" playsinline autoplay></video>
+  <canvas id="overlay"></canvas>
+
+  <div id="info">
+    <h2>Pitch Probability Detector</h2>
+    <p>Sing a note and see all detected frequencies!</p>
+  </div>
+
+  <div id="noteDisplay"></div>
+
+  <div id="controls">
+    <div class="section-header">Detection</div>
+
+    <div class="control-group">
+      <label>
+        <span>Sensitivity</span>
+        <span class="value-display" id="sensitivityValue">15</span>
+      </label>
+      <input type="range" id="sensitivity" min="1" max="50" value="15">
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Min Probability</span>
+        <span class="value-display" id="minProbValue">10%</span>
+      </label>
+      <input type="range" id="minProb" min="0" max="50" value="10">
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>FFT Size</span>
+        <span class="value-display" id="fftSizeValue">8192</span>
+      </label>
+      <input type="range" id="fftSize" min="2048" max="16384" step="2048" value="8192">
+    </div>
+
+    <div class="section-header">Display</div>
+
+    <div class="control-group">
+      <label>
+        <span>Max Notes Shown</span>
+        <span class="value-display" id="maxNotesValue">8</span>
+      </label>
+      <input type="range" id="maxNotes" min="3" max="12" value="8">
+    </div>
+  </div>
+</div>
+
+<script>
+  console.log(">>> Pitch Probability Detector Starting...");
+
+  const videoElement = document.getElementById('input_video');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d');
+  const noteDisplay = document.getElementById('noteDisplay');
+
+  // Configuration
+  let config = {
+    sensitivity: 15,
+    minProbability: 10,
+    fftSize: 8192,
+    maxNotes: 8
+  };
+
+  // Audio setup
+  let audioContext, analyser, dataArray;
+
+  // Note names
+  const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+  // UI Controls
+  document.getElementById('sensitivity').oninput = (e) => {
+    config.sensitivity = parseInt(e.target.value);
+    document.getElementById('sensitivityValue').innerText = config.sensitivity;
+  };
+
+  document.getElementById('minProb').oninput = (e) => {
+    config.minProbability = parseInt(e.target.value);
+    document.getElementById('minProbValue').innerText = config.minProbability + '%';
+  };
+
+  document.getElementById('fftSize').oninput = (e) => {
+    const newSize = parseInt(e.target.value);
+    config.fftSize = newSize;
+    document.getElementById('fftSizeValue').innerText = newSize;
+    if (analyser) {
+      analyser.fftSize = newSize;
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+    }
+  };
+
+  document.getElementById('maxNotes').oninput = (e) => {
+    config.maxNotes = parseInt(e.target.value);
+    document.getElementById('maxNotesValue').innerText = config.maxNotes;
+  };
+
+  // Convert frequency to note
+  function frequencyToNote(frequency) {
+    const noteNum = 12 * (Math.log(frequency / 440) / Math.log(2));
+    const rounded = Math.round(noteNum) + 69;
+    const noteName = NOTE_NAMES[rounded % 12];
+    const octave = Math.floor(rounded / 12) - 1;
+    const cents = ((noteNum - Math.round(noteNum)) * 100).toFixed(0);
+    return { name: noteName, octave: octave, fullName: noteName + octave, cents: cents, midiNote: rounded };
+  }
+
+  // Detect all frequencies and calculate probabilities
+  function detectPitchProbabilities() {
+    if (!analyser) return [];
+
+    analyser.getByteFrequencyData(dataArray);
+
+    const binFreq = audioContext.sampleRate / analyser.fftSize;
+    const minFreq = 60;  // C2
+    const maxFreq = 2000; // Roughly B6
+
+    const minBin = Math.floor(minFreq / binFreq);
+    const maxBin = Math.floor(maxFreq / binFreq);
+
+    // Find all peaks in the spectrum
+    const peaks = [];
+    const threshold = config.sensitivity * 2;
+
+    for (let i = minBin; i < maxBin; i++) {
+      const val = dataArray[i];
+
+      // Check if it's a local peak
+      if (val > threshold &&
+          val > dataArray[i - 1] &&
+          val > dataArray[i + 1]) {
+
+        // Check for harmonic support
+        let harmonicScore = val;
+        const fundamental = i * binFreq;
+
+        // Check 2nd and 3rd harmonics
+        const harmonic2Bin = Math.floor((fundamental * 2) / binFreq);
+        const harmonic3Bin = Math.floor((fundamental * 3) / binFreq);
+
+        if (harmonic2Bin < dataArray.length) {
+          harmonicScore += dataArray[harmonic2Bin] * 0.5;
+        }
+        if (harmonic3Bin < dataArray.length) {
+          harmonicScore += dataArray[harmonic3Bin] * 0.3;
+        }
+
+        const frequency = i * binFreq;
+        const note = frequencyToNote(frequency);
+
+        peaks.push({
+          frequency: frequency,
+          strength: harmonicScore,
+          note: note
+        });
+      }
+    }
+
+    // Group peaks by note and sum their strengths
+    const noteMap = new Map();
+
+    for (const peak of peaks) {
+      const key = peak.note.fullName;
+      if (noteMap.has(key)) {
+        noteMap.get(key).strength += peak.strength;
+        noteMap.get(key).count++;
+      } else {
+        noteMap.set(key, {
+          note: peak.note,
+          strength: peak.strength,
+          count: 1
+        });
+      }
+    }
+
+    // Convert to array and calculate probabilities
+    const detectedNotes = Array.from(noteMap.values());
+
+    // Find max strength for normalization
+    const maxStrength = Math.max(...detectedNotes.map(n => n.strength), 1);
+
+    // Calculate probabilities
+    const noteProbabilities = detectedNotes.map(n => ({
+      note: n.note.fullName,
+      noteName: n.note.name,
+      octave: n.note.octave,
+      probability: (n.strength / maxStrength) * 100,
+      rawStrength: n.strength
+    }));
+
+    // Sort by probability
+    noteProbabilities.sort((a, b) => b.probability - a.probability);
+
+    // Filter by minimum probability and limit count
+    return noteProbabilities
+      .filter(n => n.probability >= config.minProbability)
+      .slice(0, config.maxNotes);
+  }
+
+  // Render note probabilities
+  function renderNoteProbabilities(notes) {
+    if (notes.length === 0) {
+      noteDisplay.innerHTML = '';
+      return;
+    }
+
+    const html = notes.map((n, index) => {
+      // Color based on position
+      const hue = (360 / config.maxNotes) * index;
+      const color = `hsl(${hue}, 80%, 60%)`;
+
+      return `
+        <div class="note-probability" style="opacity: ${0.3 + (n.probability / 100) * 0.7}">
+          <div class="note-name" style="color: ${color}">${n.note}</div>
+          <div class="probability-bar">
+            <div class="probability-fill" style="width: ${n.probability}%; background: ${color}"></div>
+          </div>
+          <div class="probability-value">${n.probability.toFixed(0)}%</div>
+        </div>
+      `;
+    }).join('');
+
+    noteDisplay.innerHTML = html;
+  }
+
+  // Animation loop
+  function animate() {
+    const notes = detectPitchProbabilities();
+    renderNoteProbabilities(notes);
+    requestAnimationFrame(animate);
+  }
+
+  // Initialize
+  async function init() {
+    try {
+      // Get camera and mic
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720 },
+        audio: true
+      });
+
+      videoElement.srcObject = stream;
+
+      // Setup audio analysis
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = config.fftSize;
+      analyser.smoothingTimeConstant = 0.7;
+
+      source.connect(analyser);
+
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      // Setup canvas
+      canvas.width = 1280;
+      canvas.height = 720;
+
+      // Start animation
+      animate();
+
+      console.log("Ready! Sing a note...");
+
+    } catch (error) {
+      console.error("Initialization error:", error);
+      alert("Error: " + error.message);
+    }
+  }
+
+  // Start on load
+  window.onload = () => {
+    init();
+    // Resume audio context on user interaction
+    document.body.onclick = () => {
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+    };
+  };
+</script>
+
+</body>
+</html>
