@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>3D Hand Mesh Overlay - Browser Based</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js" crossorigin="anonymous"></script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      color: #fff;
+      overflow: hidden;
+      font-family: 'Montserrat', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    .container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 1280px;
+      max-height: 720px;
+    }
+
+    video {
+      display: none;
+    }
+
+    #videoCanvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 1;
+    }
+
+    #renderCanvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    #info {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 15px 20px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    #info h2 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      color: #0ff;
+    }
+
+    #info p {
+      margin: 5px 0;
+      color: #bbb;
+    }
+
+    #controls {
+      position: absolute;
+      right: 20px;
+      top: 20px;
+      width: 220px;
+      background: rgba(10, 10, 10, 0.9);
+      backdrop-filter: blur(15px);
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 10;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    .section-header {
+      font-size: 10px;
+      font-weight: 800;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 15px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 5px;
+    }
+
+    .section-header:first-child {
+      margin-top: 0;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 15px;
+    }
+
+    .control-group label {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      color: #bbb;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    input[type=range] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #0ff;
+      height: 4px;
+      border-radius: 2px;
+      background: #333;
+      appearance: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: #0ff;
+      margin-top: -4px;
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 4px;
+      background: #333;
+      border-radius: 2px;
+    }
+
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .toggle-text {
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 34px;
+      height: 18px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #333;
+      transition: .3s;
+      border-radius: 20px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #888;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #0ff;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(16px);
+      background-color: #000;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px;
+      background: #222;
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 6px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #0ff;
+    }
+
+    #status {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      font-size: 10px;
+      color: #666;
+      z-index: 10;
+    }
+
+    .value-display {
+      color: #0ff;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <video id="input_video" playsinline></video>
+  <canvas id="videoCanvas"></canvas>
+  <canvas id="renderCanvas"></canvas>
+
+  <div id="info">
+    <h2>3D Hand Mesh Overlay</h2>
+    <p>Hands detected: <span id="handCount" class="value-display">0</span></p>
+    <p>FPS: <span id="fps" class="value-display">0</span></p>
+  </div>
+
+  <div id="controls">
+    <div class="section-header">Mesh Style</div>
+
+    <div class="control-group">
+      <label>Render Mode</label>
+      <select id="renderMode">
+        <option value="solid">Solid Mesh</option>
+        <option value="wireframe">Wireframe</option>
+        <option value="both" selected>Both</option>
+        <option value="points">Points</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>Color Scheme</label>
+      <select id="colorScheme">
+        <option value="cyan">Cyan</option>
+        <option value="rainbow" selected>Rainbow</option>
+        <option value="depth">Depth-based</option>
+        <option value="hot">Hot</option>
+        <option value="cool">Cool</option>
+      </select>
+    </div>
+
+    <div class="section-header">Mesh Settings</div>
+
+    <div class="control-group">
+      <label>
+        <span>Opacity</span>
+        <span class="value-display" id="opacityValue">0.85</span>
+      </label>
+      <input type="range" id="meshOpacity" min="0" max="1" step="0.05" value="0.85">
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Wireframe Thickness</span>
+        <span class="value-display" id="wireframeValue">2</span>
+      </label>
+      <input type="range" id="wireframeThickness" min="1" max="10" step="0.5" value="2">
+    </div>
+
+    <div class="section-header">Effects</div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Smooth Shading</span>
+      <label class="switch">
+        <input type="checkbox" id="smoothShading" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Show Landmarks</span>
+      <label class="switch">
+        <input type="checkbox" id="showLandmarks" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Glow Effect</span>
+      <label class="switch">
+        <input type="checkbox" id="glowEffect" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Mesh Scale</span>
+        <span class="value-display" id="scaleValue">1.0</span>
+      </label>
+      <input type="range" id="meshScale" min="0.5" max="2.0" step="0.1" value="1.0">
+    </div>
+  </div>
+
+  <div id="status">Initializing...</div>
+</div>
+
+<script>
+  console.log(">>> 3D Hand Mesh Overlay Starting...");
+
+  // DOM Elements
+  const videoElement = document.getElementById('input_video');
+  const videoCanvas = document.getElementById('videoCanvas');
+  const videoCtx = videoCanvas.getContext('2d');
+  const renderCanvas = document.getElementById('renderCanvas');
+  const statusDiv = document.getElementById('status');
+  const handCountSpan = document.getElementById('handCount');
+  const fpsSpan = document.getElementById('fps');
+
+  // Three.js Setup
+  let scene, camera, renderer;
+  let handMeshes = [];
+  let landmarkSpheres = [];
+
+  // Configuration
+  let config = {
+    renderMode: 'both',
+    colorScheme: 'rainbow',
+    meshOpacity: 0.85,
+    wireframeThickness: 2,
+    smoothShading: true,
+    showLandmarks: true,
+    glowEffect: true,
+    meshScale: 1.0
+  };
+
+  // FPS Tracking
+  let frameCount = 0;
+  let lastTime = performance.now();
+
+  // MediaPipe Hand Mesh Triangulation
+  // These are the triangle indices for the hand mesh based on MediaPipe's 21 landmarks
+  const HAND_CONNECTIONS = [
+    [0, 1], [1, 2], [2, 3], [3, 4],           // Thumb
+    [0, 5], [5, 6], [6, 7], [7, 8],           // Index finger
+    [0, 9], [9, 10], [10, 11], [11, 12],      // Middle finger
+    [0, 13], [13, 14], [14, 15], [15, 16],    // Ring finger
+    [0, 17], [17, 18], [18, 19], [19, 20],    // Pinky
+    [5, 9], [9, 13], [13, 17]                 // Palm connections
+  ];
+
+  // Triangle faces for the hand mesh
+  const HAND_TRIANGLES = [
+    // Palm base
+    [0, 1, 5], [0, 5, 9], [0, 9, 13], [0, 13, 17],
+    // Palm connections
+    [5, 6, 9], [9, 10, 13], [13, 14, 17],
+    [5, 9, 10], [9, 13, 14], [13, 17, 18],
+    // Thumb
+    [1, 2, 5], [2, 3, 5], [3, 4, 5],
+    // Index finger
+    [5, 6, 7], [5, 7, 8], [6, 7, 8],
+    // Middle finger
+    [9, 10, 11], [9, 11, 12], [10, 11, 12],
+    // Ring finger
+    [13, 14, 15], [13, 15, 16], [14, 15, 16],
+    // Pinky
+    [17, 18, 19], [17, 19, 20], [18, 19, 20],
+    // Additional palm fill
+    [1, 5, 6], [2, 5, 6],
+    [5, 6, 10], [6, 9, 10],
+    [9, 10, 14], [10, 13, 14],
+    [13, 14, 18], [14, 17, 18],
+  ];
+
+  // UI Controls
+  document.getElementById('renderMode').onchange = (e) => {
+    config.renderMode = e.target.value;
+    updateMeshMaterials();
+  };
+
+  document.getElementById('colorScheme').onchange = (e) => {
+    config.colorScheme = e.target.value;
+    updateMeshMaterials();
+  };
+
+  document.getElementById('meshOpacity').oninput = (e) => {
+    config.meshOpacity = parseFloat(e.target.value);
+    document.getElementById('opacityValue').innerText = config.meshOpacity.toFixed(2);
+    updateMeshMaterials();
+  };
+
+  document.getElementById('wireframeThickness').oninput = (e) => {
+    config.wireframeThickness = parseFloat(e.target.value);
+    document.getElementById('wireframeValue').innerText = config.wireframeThickness.toFixed(1);
+    updateMeshMaterials();
+  };
+
+  document.getElementById('smoothShading').onchange = (e) => {
+    config.smoothShading = e.target.checked;
+    updateMeshMaterials();
+  };
+
+  document.getElementById('showLandmarks').onchange = (e) => {
+    config.showLandmarks = e.target.checked;
+    updateLandmarkVisibility();
+  };
+
+  document.getElementById('glowEffect').onchange = (e) => {
+    config.glowEffect = e.target.checked;
+  };
+
+  document.getElementById('meshScale').oninput = (e) => {
+    config.meshScale = parseFloat(e.target.value);
+    document.getElementById('scaleValue').innerText = config.meshScale.toFixed(1);
+  };
+
+  // Initialize Three.js
+  function initThreeJS() {
+    scene = new THREE.Scene();
+
+    // Camera setup (orthographic for 2D overlay)
+    const aspect = renderCanvas.width / renderCanvas.height;
+    camera = new THREE.OrthographicCamera(-aspect, aspect, 1, -1, 0.1, 1000);
+    camera.position.z = 2;
+
+    // Renderer setup
+    renderer = new THREE.WebGLRenderer({
+      canvas: renderCanvas,
+      alpha: true,
+      antialias: true
+    });
+    renderer.setSize(renderCanvas.width, renderCanvas.height);
+    renderer.setClearColor(0x000000, 0);
+
+    // Add ambient light
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
+
+    // Add directional light
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(0, 0, 1);
+    scene.add(directionalLight);
+  }
+
+  // Create a hand mesh
+  function createHandMesh() {
+    const geometry = new THREE.BufferGeometry();
+
+    // Create vertices (21 landmarks, we'll update positions later)
+    const vertices = new Float32Array(21 * 3);
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+
+    // Create faces using triangulation
+    const indices = [];
+    for (let tri of HAND_TRIANGLES) {
+      indices.push(tri[0], tri[1], tri[2]);
+    }
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    // Create materials
+    const solidMaterial = new THREE.MeshPhongMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: config.meshOpacity,
+      side: THREE.DoubleSide,
+      flatShading: !config.smoothShading
+    });
+
+    const wireframeMaterial = new THREE.LineBasicMaterial({
+      color: 0x00ffff,
+      linewidth: config.wireframeThickness,
+      transparent: true,
+      opacity: config.meshOpacity
+    });
+
+    // Create mesh and wireframe
+    const mesh = new THREE.Mesh(geometry, solidMaterial);
+    const wireframe = new THREE.LineSegments(
+      new THREE.WireframeGeometry(geometry),
+      wireframeMaterial
+    );
+
+    const group = new THREE.Group();
+    group.add(mesh);
+    group.add(wireframe);
+
+    // Store references
+    group.userData.solidMesh = mesh;
+    group.userData.wireframe = wireframe;
+    group.userData.geometry = geometry;
+
+    // Create landmark spheres
+    const landmarkGroup = new THREE.Group();
+    for (let i = 0; i < 21; i++) {
+      const sphereGeometry = new THREE.SphereGeometry(0.01, 8, 8);
+      const sphereMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9
+      });
+      const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      landmarkGroup.add(sphere);
+    }
+    group.userData.landmarks = landmarkGroup;
+    group.add(landmarkGroup);
+
+    scene.add(group);
+    return group;
+  }
+
+  // Update mesh materials based on config
+  function updateMeshMaterials() {
+    for (let handGroup of handMeshes) {
+      const mesh = handGroup.userData.solidMesh;
+      const wireframe = handGroup.userData.wireframe;
+
+      // Update render mode visibility
+      mesh.visible = (config.renderMode === 'solid' || config.renderMode === 'both');
+      wireframe.visible = (config.renderMode === 'wireframe' || config.renderMode === 'both');
+
+      // Update opacity
+      mesh.material.opacity = config.meshOpacity;
+      wireframe.material.opacity = config.meshOpacity;
+
+      // Update shading
+      mesh.material.flatShading = !config.smoothShading;
+      mesh.material.needsUpdate = true;
+
+      // Update wireframe thickness
+      wireframe.material.linewidth = config.wireframeThickness;
+
+      // Update color scheme
+      const color = getColorForScheme(0.5); // Default color
+      mesh.material.color.setHex(color);
+      wireframe.material.color.setHex(color);
+    }
+  }
+
+  // Update landmark visibility
+  function updateLandmarkVisibility() {
+    for (let handGroup of handMeshes) {
+      handGroup.userData.landmarks.visible = config.showLandmarks;
+    }
+  }
+
+  // Get color based on scheme
+  function getColorForScheme(depth) {
+    switch (config.colorScheme) {
+      case 'cyan':
+        return 0x00ffff;
+      case 'rainbow':
+        return new THREE.Color().setHSL((depth * 0.5 + 0.5), 1.0, 0.5).getHex();
+      case 'depth':
+        const gray = Math.floor((depth * 0.5 + 0.5) * 255);
+        return (gray << 16) | (gray << 8) | gray;
+      case 'hot':
+        return new THREE.Color().setHSL(0.0, 1.0, depth * 0.5 + 0.5).getHex();
+      case 'cool':
+        return new THREE.Color().setHSL(0.6, 1.0, depth * 0.5 + 0.5).getHex();
+      default:
+        return 0x00ffff;
+    }
+  }
+
+  // Update hand mesh with landmarks
+  function updateHandMesh(handGroup, landmarks) {
+    const geometry = handGroup.userData.geometry;
+    const positions = geometry.attributes.position.array;
+    const landmarkGroup = handGroup.userData.landmarks;
+
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+
+    // Update vertex positions
+    for (let i = 0; i < 21; i++) {
+      const lm = landmarks[i];
+
+      // Convert normalized coordinates to clip space
+      // MediaPipe gives normalized coords (0-1), we need to map to (-aspect, aspect) and (-1, 1)
+      const aspect = renderCanvas.width / renderCanvas.height;
+      const x = (lm.x * 2 - 1) * aspect * config.meshScale;
+      const y = -(lm.y * 2 - 1) * config.meshScale; // Flip Y
+      const z = -lm.z * config.meshScale; // Z depth
+
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+
+      // Update landmark sphere position
+      if (config.showLandmarks) {
+        const sphere = landmarkGroup.children[i];
+        sphere.position.set(x, y, z);
+      }
+    }
+
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();
+
+    // Update colors based on depth if using depth scheme
+    if (config.colorScheme === 'depth' || config.colorScheme === 'rainbow') {
+      const avgZ = (minZ + maxZ) / 2;
+      const normalizedDepth = (avgZ - minZ) / (maxZ - minZ + 0.001);
+      const color = getColorForScheme(normalizedDepth);
+
+      handGroup.userData.solidMesh.material.color.setHex(color);
+      handGroup.userData.wireframe.material.color.setHex(color);
+    }
+
+    // Add glow effect
+    if (config.glowEffect) {
+      handGroup.userData.solidMesh.material.emissive = handGroup.userData.solidMesh.material.color.clone();
+      handGroup.userData.solidMesh.material.emissiveIntensity = 0.3;
+    } else {
+      handGroup.userData.solidMesh.material.emissiveIntensity = 0;
+    }
+
+    // Update wireframe
+    const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+    handGroup.userData.wireframe.geometry.dispose();
+    handGroup.userData.wireframe.geometry = wireframeGeometry;
+  }
+
+  // Prepare video canvas
+  function prepareVideoCanvas() {
+    const videoW = videoElement.videoWidth;
+    const videoH = videoElement.videoHeight;
+
+    if (videoCanvas.width !== videoW || videoCanvas.height !== videoH) {
+      videoCanvas.width = videoW;
+      videoCanvas.height = videoH;
+      renderCanvas.width = videoW;
+      renderCanvas.height = videoH;
+
+      // Update Three.js renderer and camera
+      if (renderer) {
+        renderer.setSize(videoW, videoH);
+        const aspect = videoW / videoH;
+        camera.left = -aspect;
+        camera.right = aspect;
+        camera.updateProjectionMatrix();
+      }
+    }
+
+    // Draw video frame (mirrored for natural view)
+    videoCtx.save();
+    videoCtx.translate(videoCanvas.width, 0);
+    videoCtx.scale(-1, 1);
+    videoCtx.drawImage(videoElement, 0, 0, videoCanvas.width, videoCanvas.height);
+    videoCtx.restore();
+  }
+
+  // Handle hand tracking results
+  function onHandResults(results) {
+    prepareVideoCanvas();
+
+    // Update hand count
+    const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+    handCountSpan.innerText = numHands;
+
+    // Ensure we have enough hand meshes
+    while (handMeshes.length < numHands) {
+      handMeshes.push(createHandMesh());
+    }
+
+    // Hide excess hand meshes
+    for (let i = 0; i < handMeshes.length; i++) {
+      handMeshes[i].visible = (i < numHands);
+    }
+
+    // Update hand meshes with landmark data
+    if (results.multiHandLandmarks) {
+      for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+        updateHandMesh(handMeshes[i], results.multiHandLandmarks[i]);
+      }
+    }
+
+    // Render 3D scene
+    renderer.render(scene, camera);
+
+    // Update FPS
+    frameCount++;
+    const currentTime = performance.now();
+    if (currentTime - lastTime >= 1000) {
+      fpsSpan.innerText = frameCount;
+      frameCount = 0;
+      lastTime = currentTime;
+    }
+  }
+
+  // Initialize application
+  async function initApp() {
+    try {
+      statusDiv.innerText = "Requesting camera access...";
+
+      // Request camera
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720 }
+      });
+
+      videoElement.srcObject = stream;
+      await videoElement.play();
+
+      statusDiv.innerText = "Loading MediaPipe Hands...";
+
+      // Initialize Three.js
+      initThreeJS();
+
+      // Initialize MediaPipe Hands
+      const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.5
+      });
+
+      hands.onResults(onHandResults);
+
+      // Start camera processing
+      const camera = new Camera(videoElement, {
+        onFrame: async () => {
+          await hands.send({ image: videoElement });
+        },
+        width: 1280,
+        height: 720
+      });
+
+      await camera.start();
+      statusDiv.innerText = "Ready";
+
+    } catch (error) {
+      console.error("Initialization error:", error);
+      statusDiv.innerText = "Error: " + error.message;
+      alert("Startup Error: " + error.message);
+    }
+  }
+
+  // Start application when page loads
+  window.onload = initApp;
+
+</script>
+
+</body>
+</html>
