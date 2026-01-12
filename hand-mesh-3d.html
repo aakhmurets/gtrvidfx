@@ -381,54 +381,64 @@
     [5, 9], [9, 13], [13, 17]                 // Palm connections
   ];
 
-  // Triangle faces for glove with SEPARATED fingers (no webbing between)
+  // Dense volumetric glove mesh - creates solid finger and palm volume
   const HAND_TRIANGLES = [
-    // === PALM (Minimal base structure only) ===
-    [0, 1, 5], [0, 5, 9], [0, 9, 13], [0, 13, 17],
-    [5, 9, 13], [5, 13, 17],
+    // === DENSE PALM (Full coverage) ===
+    // Wrist to finger bases - radial pattern
+    [0, 1, 5], [0, 5, 9], [0, 9, 13], [0, 13, 17], [0, 17, 1],
+    // Finger base quadrilaterals (split into triangles)
+    [1, 2, 5], [2, 5, 6], [5, 6, 9], [6, 9, 10],
+    [9, 10, 13], [10, 13, 14], [13, 14, 17], [14, 17, 18],
+    // Fill center of palm
+    [5, 9, 13], [5, 13, 17], [1, 5, 13], [1, 13, 17],
+    [2, 6, 10], [6, 10, 14], [10, 14, 18],
 
-    // === THUMB (Separate finger) ===
-    [1, 2, 3], [1, 3, 4],
-    [0, 1, 2], [0, 2, 3], [0, 3, 4],
+    // === THUMB (Volumetric - connect all segments both ways) ===
+    [1, 2, 0], [2, 3, 0], [3, 4, 0],  // One side
+    [1, 2, 3], [2, 3, 4],              // Other side
+    [1, 3, 4], [0, 2, 4],              // Cross connections for volume
+    [0, 1, 4], [1, 4, 3],              // More volume
 
-    // === INDEX FINGER (Landmark chain: 5->6->7->8) ===
-    // Segment 5-6
-    [5, 6, 0],
-    // Segment 6-7
-    [6, 7, 5],
-    // Segment 7-8
-    [7, 8, 6], [8, 6, 5],
+    // === INDEX FINGER (Dense tube) ===
+    [5, 6, 7], [6, 7, 8],              // Front face
+    [5, 6, 9], [6, 7, 9],              // Side connection to palm
+    [7, 8, 6], [8, 6, 10],             // Side volume
+    [5, 7, 8], [5, 8, 10],             // Back connections
+    [5, 7, 9], [7, 9, 10],             // Fill gaps
+    [9, 10, 6], [9, 6, 7],             // More density
 
-    // === MIDDLE FINGER (Landmark chain: 9->10->11->12) ===
-    // Segment 9-10
-    [9, 10, 0],
-    // Segment 10-11
-    [10, 11, 9],
-    // Segment 11-12
-    [11, 12, 10], [12, 10, 9],
+    // === MIDDLE FINGER (Dense tube) ===
+    [9, 10, 11], [10, 11, 12],         // Front face
+    [9, 10, 13], [10, 11, 13],         // Side connection
+    [11, 12, 10], [12, 10, 14],        // Side volume
+    [9, 11, 12], [9, 12, 14],          // Back connections
+    [9, 11, 13], [11, 13, 14],         // Fill gaps
+    [13, 14, 10], [13, 10, 11],        // More density
 
-    // === RING FINGER (Landmark chain: 13->14->15->16) ===
-    // Segment 13-14
-    [13, 14, 0],
-    // Segment 14-15
-    [14, 15, 13],
-    // Segment 15-16
-    [15, 16, 14], [16, 14, 13],
+    // === RING FINGER (Dense tube) ===
+    [13, 14, 15], [14, 15, 16],        // Front face
+    [13, 14, 17], [14, 15, 17],        // Side connection
+    [15, 16, 14], [16, 14, 18],        // Side volume
+    [13, 15, 16], [13, 16, 18],        // Back connections
+    [13, 15, 17], [15, 17, 18],        // Fill gaps
+    [17, 18, 14], [17, 14, 15],        // More density
 
-    // === PINKY (Landmark chain: 17->18->19->20) ===
-    // Segment 17-18
-    [17, 18, 0],
-    // Segment 18-19
-    [18, 19, 17],
-    // Segment 19-20
-    [19, 20, 18], [20, 18, 17],
+    // === PINKY (Dense tube) ===
+    [17, 18, 19], [18, 19, 20],        // Front face
+    [17, 18, 0], [18, 19, 0],          // Side connection
+    [19, 20, 18], [20, 18, 0],         // Side volume
+    [17, 19, 20], [17, 20, 0],         // Back connections
+    [17, 19, 0], [19, 0, 1],           // Fill gaps
+    [0, 1, 18], [1, 18, 19],           // More density
 
-    // === FINGER BASES (Connect to palm knuckles ONLY, no cross-finger connections) ===
-    [0, 5, 6], [0, 9, 10], [0, 13, 14], [0, 17, 18],
+    // === KNUCKLE WEBBING (Small amounts between finger bases only) ===
+    [5, 6, 10], [9, 10, 14], [13, 14, 18],
+    [2, 6, 5], [6, 10, 9], [10, 14, 13], [14, 18, 17],
 
-    // === BACK OF HAND (Flat palm back, NO finger tubes) ===
-    [5, 9, 13], [5, 13, 17],
-    [1, 5, 17],
+    // === BACK OF HAND (Dense coverage) ===
+    [1, 5, 9], [5, 9, 13], [9, 13, 17], [1, 9, 17],
+    [2, 6, 10], [6, 10, 14], [10, 14, 18], [2, 10, 18],
+    [1, 2, 10], [1, 10, 17], [2, 10, 14], [2, 14, 18],
   ];
 
   // UI Controls
