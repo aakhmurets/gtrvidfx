@@ -331,6 +331,7 @@
   // Audio setup
   let audioContext, analyser, dataArray;
   let peakValues = [];
+  let smoothedValues = []; // Add visual smoothing
 
   // UI Controls
   document.getElementById('fftSize').onchange = (e) => {
@@ -340,6 +341,7 @@
       analyser.fftSize = newSize;
       dataArray = new Uint8Array(analyser.frequencyBinCount);
       peakValues = new Array(config.barCount).fill(0);
+      smoothedValues = new Array(config.barCount).fill(0);
     }
   };
 
@@ -365,6 +367,7 @@
     config.barCount = parseInt(e.target.value);
     document.getElementById('barCountValue').innerText = config.barCount;
     peakValues = new Array(config.barCount).fill(0);
+    smoothedValues = new Array(config.barCount).fill(0);
   };
 
   document.getElementById('heightScale').oninput = (e) => {
@@ -466,11 +469,18 @@
           peakFrequency = freq;
         }
 
-        const barHeight = value * maxHeight * config.heightScale;
+        // Calculate bar height with visual smoothing to reduce jitter
+        const targetHeight = value * maxHeight * config.heightScale;
+
+        // Smooth the bar height (0.3 = smoothing factor, lower = smoother but slower response)
+        if (!smoothedValues[i]) smoothedValues[i] = targetHeight;
+        smoothedValues[i] += (targetHeight - smoothedValues[i]) * 0.3;
+
+        const barHeight = smoothedValues[i];
         const x = i * barWidth;
         const y = canvas.height - barHeight;
 
-        // Get color
+        // Get color (use original value for color intensity)
         const color = getColor(value, config.colorScheme, i, config.barCount);
 
         // Draw bar
@@ -546,10 +556,14 @@
       analyser.fftSize = config.fftSize;
       analyser.smoothingTimeConstant = config.smoothing;
 
+      // IMPORTANT: Only connect to analyser, NOT to destination (speakers)
+      // This prevents audio feedback
       source.connect(analyser);
+      // Do NOT do: analyser.connect(audioContext.destination);
 
       dataArray = new Uint8Array(analyser.frequencyBinCount);
       peakValues = new Array(config.barCount).fill(0);
+      smoothedValues = new Array(config.barCount).fill(0);
 
       // Setup canvas
       canvas.width = 1280;
