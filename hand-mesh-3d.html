@@ -612,7 +612,7 @@
       // Convert normalized coordinates to clip space
       // MediaPipe gives normalized coords (0-1), we need to map to (-aspect, aspect) and (-1, 1)
       const aspect = renderCanvas.width / renderCanvas.height;
-      const x = (lm.x * 2 - 1) * aspect * config.meshScale;
+      const x = -((lm.x * 2 - 1) * aspect * config.meshScale); // Mirror X to match video
       const y = -(lm.y * 2 - 1) * config.meshScale; // Flip Y
       const z = -lm.z * config.meshScale; // Z depth
 
