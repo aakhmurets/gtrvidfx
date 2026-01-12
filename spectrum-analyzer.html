@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Spectrum Analyzer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      color: #fff;
+      overflow: hidden;
+      font-family: 'Montserrat', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    .container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 1280px;
+      max-height: 720px;
+    }
+
+    video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    #spectrum {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #info {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 15px 20px;
+      border-radius: 10px;
+      font-size: 12px;
+      z-index: 10;
+      backdrop-filter: blur(10px);
+    }
+
+    #info h2 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      color: #0ff;
+    }
+
+    #controls {
+      position: absolute;
+      right: 20px;
+      top: 20px;
+      background: rgba(10, 10, 10, 0.9);
+      backdrop-filter: blur(15px);
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 10;
+      width: 220px;
+    }
+
+    .section-header {
+      font-size: 10px;
+      font-weight: 800;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 15px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 5px;
+    }
+
+    .section-header:first-child {
+      margin-top: 0;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+    }
+
+    .control-group label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      color: #bbb;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    input[type=range] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #0ff;
+      height: 4px;
+      border-radius: 2px;
+      background: #333;
+      appearance: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: #0ff;
+    }
+
+    .value-display {
+      color: #0ff;
+      font-weight: 700;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px;
+      background: #222;
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 6px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #0ff;
+    }
+
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .toggle-text {
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 34px;
+      height: 18px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #333;
+      transition: .3s;
+      border-radius: 20px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #888;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #0ff;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(16px);
+      background-color: #000;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <video id="input_video" playsinline autoplay></video>
+  <canvas id="spectrum"></canvas>
+
+  <div id="info">
+    <h2>Spectrum Analyzer</h2>
+    <p>Real-time frequency visualization</p>
+    <p id="peakFreq">Peak: --</p>
+  </div>
+
+  <div id="controls">
+    <div class="section-header">Analysis</div>
+
+    <div class="control-group">
+      <label>FFT Size</label>
+      <select id="fftSize">
+        <option value="512">512</option>
+        <option value="1024">1024</option>
+        <option value="2048" selected>2048</option>
+        <option value="4096">4096</option>
+        <option value="8192">8192</option>
+        <option value="16384">16384</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Smoothing</span>
+        <span class="value-display" id="smoothingValue">0.8</span>
+      </label>
+      <input type="range" id="smoothing" min="0" max="1" step="0.1" value="0.8">
+    </div>
+
+    <div class="section-header">Frequency Range</div>
+
+    <div class="control-group">
+      <label>
+        <span>Min Freq (Hz)</span>
+        <span class="value-display" id="minFreqValue">20</span>
+      </label>
+      <input type="range" id="minFreq" min="20" max="200" step="10" value="20">
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Max Freq (Hz)</span>
+        <span class="value-display" id="maxFreqValue">8000</span>
+      </label>
+      <input type="range" id="maxFreq" min="1000" max="20000" step="100" value="8000">
+    </div>
+
+    <div class="section-header">Display</div>
+
+    <div class="control-group">
+      <label>
+        <span>Bar Count</span>
+        <span class="value-display" id="barCountValue">128</span>
+      </label>
+      <input type="range" id="barCount" min="32" max="256" step="16" value="128">
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Height Scale</span>
+        <span class="value-display" id="heightScaleValue">1.0</span>
+      </label>
+      <input type="range" id="heightScale" min="0.5" max="3.0" step="0.1" value="1.0">
+    </div>
+
+    <div class="control-group">
+      <label>Color Scheme</label>
+      <select id="colorScheme">
+        <option value="rainbow">Rainbow</option>
+        <option value="fire">Fire</option>
+        <option value="ocean">Ocean</option>
+        <option value="matrix">Matrix</option>
+        <option value="cyan" selected>Cyan</option>
+        <option value="purple">Purple</option>
+      </select>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Show Labels</span>
+      <label class="switch">
+        <input type="checkbox" id="showLabels" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Peak Hold</span>
+      <label class="switch">
+        <input type="checkbox" id="peakHold">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+</div>
+
+<script>
+  console.log(">>> Spectrum Analyzer Starting...");
+
+  const videoElement = document.getElementById('input_video');
+  const canvas = document.getElementById('spectrum');
+  const ctx = canvas.getContext('2d');
+  const peakFreqDisplay = document.getElementById('peakFreq');
+
+  // Configuration
+  let config = {
+    fftSize: 2048,
+    smoothing: 0.8,
+    minFreq: 20,
+    maxFreq: 8000,
+    barCount: 128,
+    heightScale: 1.0,
+    colorScheme: 'cyan',
+    showLabels: true,
+    peakHold: false
+  };
+
+  // Audio setup
+  let audioContext, analyser, dataArray;
+  let peakValues = [];
+
+  // UI Controls
+  document.getElementById('fftSize').onchange = (e) => {
+    const newSize = parseInt(e.target.value);
+    config.fftSize = newSize;
+    if (analyser) {
+      analyser.fftSize = newSize;
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      peakValues = new Array(config.barCount).fill(0);
+    }
+  };
+
+  document.getElementById('smoothing').oninput = (e) => {
+    config.smoothing = parseFloat(e.target.value);
+    document.getElementById('smoothingValue').innerText = config.smoothing.toFixed(1);
+    if (analyser) {
+      analyser.smoothingTimeConstant = config.smoothing;
+    }
+  };
+
+  document.getElementById('minFreq').oninput = (e) => {
+    config.minFreq = parseInt(e.target.value);
+    document.getElementById('minFreqValue').innerText = config.minFreq;
+  };
+
+  document.getElementById('maxFreq').oninput = (e) => {
+    config.maxFreq = parseInt(e.target.value);
+    document.getElementById('maxFreqValue').innerText = config.maxFreq;
+  };
+
+  document.getElementById('barCount').oninput = (e) => {
+    config.barCount = parseInt(e.target.value);
+    document.getElementById('barCountValue').innerText = config.barCount;
+    peakValues = new Array(config.barCount).fill(0);
+  };
+
+  document.getElementById('heightScale').oninput = (e) => {
+    config.heightScale = parseFloat(e.target.value);
+    document.getElementById('heightScaleValue').innerText = config.heightScale.toFixed(1);
+  };
+
+  document.getElementById('colorScheme').onchange = (e) => {
+    config.colorScheme = e.target.value;
+  };
+
+  document.getElementById('showLabels').onchange = (e) => {
+    config.showLabels = e.target.checked;
+  };
+
+  document.getElementById('peakHold').onchange = (e) => {
+    config.peakHold = e.target.checked;
+    if (!e.target.checked) {
+      peakValues = new Array(config.barCount).fill(0);
+    }
+  };
+
+  // Logarithmic frequency scale
+  function createLogScale(minFreq, maxFreq, barCount) {
+    const logMin = Math.log10(minFreq);
+    const logMax = Math.log10(maxFreq);
+    const scale = [];
+
+    for (let i = 0; i < barCount; i++) {
+      const t = i / (barCount - 1);
+      const logFreq = logMin + t * (logMax - logMin);
+      scale.push(Math.pow(10, logFreq));
+    }
+
+    return scale;
+  }
+
+  // Get color based on scheme and normalized value (0-1)
+  function getColor(value, scheme, index, total) {
+    switch (scheme) {
+      case 'rainbow':
+        const hue = (index / total) * 360;
+        return `hsl(${hue}, 100%, ${50 + value * 30}%)`;
+
+      case 'fire':
+        if (value < 0.3) return `rgb(${value * 255 * 3}, 0, 0)`;
+        if (value < 0.6) return `rgb(255, ${(value - 0.3) * 255 * 3}, 0)`;
+        return `rgb(255, 255, ${(value - 0.6) * 255 * 2.5})`;
+
+      case 'ocean':
+        const oceanHue = 180 + (1 - value) * 60;
+        return `hsl(${oceanHue}, 100%, ${40 + value * 40}%)`;
+
+      case 'matrix':
+        return `rgb(0, ${value * 255}, 0)`;
+
+      case 'cyan':
+        return `rgba(0, 255, 255, ${0.4 + value * 0.6})`;
+
+      case 'purple':
+        return `hsl(280, 100%, ${30 + value * 50}%)`;
+
+      default:
+        return `rgba(0, 255, 255, ${value})`;
+    }
+  }
+
+  // Draw spectrum
+  function drawSpectrum() {
+    if (!analyser) return;
+
+    analyser.getByteFrequencyData(dataArray);
+
+    // Clear canvas
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Create logarithmic frequency scale
+    const freqScale = createLogScale(config.minFreq, config.maxFreq, config.barCount);
+    const binFreq = audioContext.sampleRate / analyser.fftSize;
+
+    const barWidth = canvas.width / config.barCount;
+    const maxHeight = canvas.height * 0.8; // Leave some space at top
+
+    let peakFrequency = 0;
+    let peakValue = 0;
+
+    // Draw bars
+    for (let i = 0; i < config.barCount; i++) {
+      const freq = freqScale[i];
+      const bin = Math.floor(freq / binFreq);
+
+      if (bin >= 0 && bin < dataArray.length) {
+        const value = dataArray[bin] / 255.0;
+
+        // Track peak
+        if (dataArray[bin] > peakValue) {
+          peakValue = dataArray[bin];
+          peakFrequency = freq;
+        }
+
+        const barHeight = value * maxHeight * config.heightScale;
+        const x = i * barWidth;
+        const y = canvas.height - barHeight;
+
+        // Get color
+        const color = getColor(value, config.colorScheme, i, config.barCount);
+
+        // Draw bar
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, barWidth - 1, barHeight);
+
+        // Draw glow effect
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(x, y, barWidth - 1, barHeight);
+        ctx.shadowBlur = 0;
+
+        // Peak hold
+        if (config.peakHold) {
+          if (barHeight > peakValues[i]) {
+            peakValues[i] = barHeight;
+          } else {
+            peakValues[i] *= 0.95; // Decay
+          }
+
+          // Draw peak indicator
+          if (peakValues[i] > 5) {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(x, canvas.height - peakValues[i], barWidth - 1, 2);
+          }
+        }
+      }
+    }
+
+    // Draw frequency labels
+    if (config.showLabels) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.font = '10px Montserrat';
+      ctx.textAlign = 'center';
+
+      const labelPositions = [0, config.barCount / 4, config.barCount / 2, 3 * config.barCount / 4, config.barCount - 1];
+
+      for (const pos of labelPositions) {
+        const freq = freqScale[Math.floor(pos)];
+        const x = pos * barWidth;
+        const label = freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : freq.toFixed(0);
+
+        ctx.fillText(label + 'Hz', x, canvas.height - 5);
+      }
+    }
+
+    // Update peak frequency display
+    if (peakValue > 30) {
+      peakFreqDisplay.textContent = `Peak: ${peakFrequency.toFixed(1)} Hz`;
+    } else {
+      peakFreqDisplay.textContent = 'Peak: --';
+    }
+
+    requestAnimationFrame(drawSpectrum);
+  }
+
+  // Initialize
+  async function init() {
+    try {
+      // Get camera and mic
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720 },
+        audio: true
+      });
+
+      videoElement.srcObject = stream;
+
+      // Setup audio analysis
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = config.fftSize;
+      analyser.smoothingTimeConstant = config.smoothing;
+
+      source.connect(analyser);
+
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      peakValues = new Array(config.barCount).fill(0);
+
+      // Setup canvas
+      canvas.width = 1280;
+      canvas.height = 720;
+
+      // Start animation
+      drawSpectrum();
+
+      console.log("Spectrum analyzer ready!");
+
+    } catch (error) {
+      console.error("Initialization error:", error);
+      alert("Error: " + error.message);
+    }
+  }
+
+  // Start on load
+  window.onload = () => {
+    init();
+    // Resume audio context on user interaction
+    document.body.onclick = () => {
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+    };
+  };
+</script>
+
+</body>
+</html>
