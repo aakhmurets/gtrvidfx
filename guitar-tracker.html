@@ -105,6 +105,24 @@
       pointer-events: none;
       overflow-y: auto;
       box-shadow: 0 15px 40px rgba(0,0,0,0.6);
+      cursor: move;
+    }
+
+    #controls .drag-handle {
+      cursor: move;
+      padding: 5px 0 10px 0;
+      margin: -5px -5px 10px -5px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      text-align: center;
+      font-size: 8px;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      user-select: none;
+    }
+
+    #controls .drag-handle:hover {
+      color: #0ff;
     }
 
     #controls::-webkit-scrollbar { width: 4px; }
@@ -316,6 +334,7 @@
   <div id="fretDisplay">Fret: <span id="fretNum">-</span></div>
 
   <div id="controls">
+    <div class="drag-handle">⋮⋮ Drag to Move ⋮⋮</div>
 
     <div class="section-header">Recording</div>
     <div class="control-group">
@@ -701,6 +720,48 @@ canvasElement.addEventListener('mouseleave', () => {
     isDraggingPanel = false;
     draggedPanelId = null;
     canvasElement.style.cursor = 'default';
+  }
+});
+
+// ============ DRAGGABLE SETTINGS PANEL ============
+let isDraggingSettings = false;
+let settingsDragOffset = { x: 0, y: 0 };
+
+controlsDiv.addEventListener('mousedown', (e) => {
+  // Only drag from the drag handle or header areas
+  if (e.target.classList.contains('drag-handle') || e.target.classList.contains('section-header')) {
+    isDraggingSettings = true;
+    const rect = controlsDiv.getBoundingClientRect();
+    settingsDragOffset.x = e.clientX - rect.left;
+    settingsDragOffset.y = e.clientY - rect.top;
+    controlsDiv.style.cursor = 'grabbing';
+    controlsDiv.style.transform = 'none'; // Remove the centering transform
+    e.preventDefault();
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (isDraggingSettings) {
+    const container = document.querySelector('.container');
+    const containerRect = container.getBoundingClientRect();
+
+    let newX = e.clientX - settingsDragOffset.x - containerRect.left;
+    let newY = e.clientY - settingsDragOffset.y - containerRect.top;
+
+    // Constrain to container bounds
+    newX = Math.max(0, Math.min(newX, containerRect.width - controlsDiv.offsetWidth));
+    newY = Math.max(0, Math.min(newY, containerRect.height - controlsDiv.offsetHeight));
+
+    controlsDiv.style.left = newX + 'px';
+    controlsDiv.style.right = 'auto';
+    controlsDiv.style.top = newY + 'px';
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  if (isDraggingSettings) {
+    isDraggingSettings = false;
+    controlsDiv.style.cursor = 'move';
   }
 });
 
@@ -1973,6 +2034,66 @@ function drawHUDCenterDisplay(ctx, dpr) {
   ctx.restore();
 }
 
+// Draw note label near the left hand position
+function drawHUDHandNote(ctx, landmarks, dpr) {
+  if (!landmarks || !displayNote) return;
+
+  const colors = getThemeColors();
+  const [r, g, b] = colors.primary;
+  const intensity = cfg.hudIntensity;
+
+  // Get the wrist position as anchor point for note display
+  const wrist = landmarks[0];
+
+  // Calculate position near the hand (slightly above and to the side)
+  const handX = (1.0 - wrist.x) * canvasElement.width;
+  const handY = wrist.y * canvasElement.height;
+
+  // Position the note above and slightly left of the wrist
+  const noteX = handX - 60 * dpr;
+  const noteY = handY - 50 * dpr;
+
+  ctx.save();
+
+  // Draw connecting line from note to hand
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.3 * intensity})`;
+  ctx.lineWidth = 1 * dpr;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(noteX + 25 * dpr, noteY + 15 * dpr);
+  ctx.lineTo(handX, handY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw note background bubble
+  const bubbleWidth = 70 * dpr;
+  const bubbleHeight = 45 * dpr;
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.6 * intensity})`;
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.6 * intensity})`;
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath();
+  ctx.roundRect(noteX - 10 * dpr, noteY - 15 * dpr, bubbleWidth, bubbleHeight, 8 * dpr);
+  ctx.fill();
+  ctx.stroke();
+
+  // Draw the note text
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 1)`;
+  ctx.shadowBlur = 15 * dpr;
+  ctx.fillStyle = `rgba(255, 255, 255, ${intensity})`;
+  ctx.font = `900 ${26 * dpr}px 'Montserrat'`;
+  ctx.fillText(displayNote, noteX + 25 * dpr, noteY + 5 * dpr);
+  ctx.shadowBlur = 0;
+
+  // Draw frequency underneath
+  ctx.font = `600 ${8 * dpr}px 'Montserrat'`;
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.8 * intensity})`;
+  ctx.fillText(`${detectedFrequency.toFixed(0)}Hz`, noteX + 25 * dpr, noteY + 22 * dpr);
+
+  ctx.restore();
+}
+
 function drawHUDMode(ctx, landmarks, dpr) {
   // Update fingertip trails
   updateFingertipTrails(landmarks, dpr);
@@ -1983,7 +2104,8 @@ function drawHUDMode(ctx, landmarks, dpr) {
   drawHUDDataPanel(ctx, dpr);
   drawHUDNoteHistory(ctx, dpr);
   drawHUDStatsPanel(ctx, dpr);
-  // Note: Center display removed - notes only shown within HUD panels
+  // Draw note near the left hand position
+  drawHUDHandNote(ctx, landmarks, dpr);
 }
 
 function drawSpectrum(ctx, dpr) {
@@ -2634,25 +2756,55 @@ async function initApp() {
     });
     globalStream = stream;
 
-    // Audio setup
+    // Audio setup with band pass filter for guitar frequencies
+    // Guitar fundamentals: ~82Hz (low E) to ~660Hz (high E 12th fret)
+    // Filter out fret noise, string squeaks, and background noise
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioContext.createMediaStreamSource(stream);
 
+    // Notch filter to remove 60Hz electrical hum
+    const notchFilter = audioContext.createBiquadFilter();
+    notchFilter.type = 'notch';
+    notchFilter.frequency.value = 60;
+    notchFilter.Q.value = 30;
+
+    // High-pass filter - removes low rumble and handling noise
     const filterLow = audioContext.createBiquadFilter();
     filterLow.type = 'highpass';
-    filterLow.frequency.value = 70;
+    filterLow.frequency.value = 75; // Just below low E (82Hz)
+    filterLow.Q.value = 0.7;
 
+    // Low-pass filter - removes fret noise, string squeaks, high freq artifacts
     const filterHigh = audioContext.createBiquadFilter();
     filterHigh.type = 'lowpass';
-    filterHigh.frequency.value = 1500;
+    filterHigh.frequency.value = 1100; // Capture fundamentals + key harmonics
+    filterHigh.Q.value = 0.7;
+
+    // Band-pass filter for tighter focus on guitar note frequencies
+    const bandPass = audioContext.createBiquadFilter();
+    bandPass.type = 'bandpass';
+    bandPass.frequency.value = 330; // Center of guitar fundamental range
+    bandPass.Q.value = 0.4; // Wide enough to capture full range
+
+    // Compressor to even out dynamics and reduce noise floor visibility
+    const compressor = audioContext.createDynamicsCompressor();
+    compressor.threshold.value = -45;
+    compressor.knee.value = 30;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.2;
 
     analyser = audioContext.createAnalyser();
     analyser.fftSize = 8192;
-    analyser.smoothingTimeConstant = 0.8;
+    analyser.smoothingTimeConstant = 0.85;
 
-    source.connect(filterLow);
+    // Connect the audio processing chain
+    source.connect(notchFilter);
+    notchFilter.connect(filterLow);
     filterLow.connect(filterHigh);
-    filterHigh.connect(analyser);
+    filterHigh.connect(bandPass);
+    bandPass.connect(compressor);
+    compressor.connect(analyser);
 
     updatePitch();
 
