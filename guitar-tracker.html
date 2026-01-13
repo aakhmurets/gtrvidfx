@@ -321,10 +321,11 @@
     <div class="control-group">
       <label>Video Quality</label>
       <select id="recordQuality">
-        <option value="high">High (1080p, 20Mbps)</option>
-        <option value="ultra">Ultra (1080p, 35Mbps)</option>
-        <option value="medium" selected>Medium (720p, 12Mbps)</option>
-        <option value="social">Social Media (720p, 8Mbps)</option>
+        <option value="ultra120">Ultra+ (1080p, 50Mbps, 120fps)</option>
+        <option value="ultra">Ultra (1080p, 35Mbps, 60fps)</option>
+        <option value="high" selected>High (1080p, 20Mbps, 60fps)</option>
+        <option value="medium">Medium (720p, 12Mbps, 30fps)</option>
+        <option value="social">Social Media (720p, 8Mbps, 30fps)</option>
       </select>
     </div>
     <button id="btnRecord" class="btn-record">
@@ -376,6 +377,14 @@
       <span class="toggle-text">Fretboard Overlay</span>
       <label class="switch">
         <input type="checkbox" id="showFretboard">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Neck Mesh (Fret Detection)</span>
+      <label class="switch">
+        <input type="checkbox" id="showNeckMesh">
         <span class="slider"></span>
       </label>
     </div>
@@ -449,6 +458,7 @@ const cfg = {
   sensitivity: 70,
   showHand: true,
   showFretboard: false,
+  showNeckMesh: false,
   showTrail: true,
   showSpectrum: true,
   visualStyle: 'explosive',
@@ -501,6 +511,24 @@ let noteHistory = [];
 let chromaData = new Array(12).fill(0);
 let hpsResult = { frequency: 0, note: '', confidence: 0 };
 
+// Note statistics for HUD
+let noteStats = {};
+for (const note of ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]) {
+  noteStats[note] = 0;
+}
+let sessionStartTime = Date.now();
+let totalNotesPlayed = 0;
+let chordSuggestions = [];
+
+// Draggable HUD panel positions
+let hudPanels = {
+  left: { x: 25, y: 75, dragging: false },
+  right: { x: -200, y: 75, dragging: false }, // negative = from right edge
+  center: { x: 0, y: 0, dragging: false } // 0,0 = centered
+};
+let dragOffset = { x: 0, y: 0 };
+let activePanel = null;
+
 // Recording
 let mediaRecorder;
 let recordedChunks = [];
@@ -535,6 +563,7 @@ document.getElementById('sensitivity').oninput = (e) => {
 
 document.getElementById('showHand').onchange = (e) => cfg.showHand = e.target.checked;
 document.getElementById('showFretboard').onchange = (e) => cfg.showFretboard = e.target.checked;
+document.getElementById('showNeckMesh').onchange = (e) => cfg.showNeckMesh = e.target.checked;
 document.getElementById('showTrail').onchange = (e) => cfg.showTrail = e.target.checked;
 document.getElementById('showSpectrum').onchange = (e) => cfg.showSpectrum = e.target.checked;
 document.getElementById('visualStyle').onchange = (e) => {
@@ -553,6 +582,126 @@ document.querySelectorAll('.theme-btn').forEach(btn => {
     btn.classList.add('active');
     cfg.theme = btn.dataset.theme;
   };
+});
+
+// ============ DRAGGABLE HUD PANELS ============
+let isDraggingPanel = false;
+let draggedPanelId = null;
+
+function getPanelBounds(panelId, canvasW, canvasH, dpr) {
+  const bounds = {};
+  if (panelId === 'left') {
+    bounds.x = hudPanels.left.x * dpr;
+    bounds.y = hudPanels.left.y * dpr;
+    bounds.width = 180 * dpr;
+    bounds.height = 200 * dpr;
+  } else if (panelId === 'right') {
+    // Right panel uses negative x (from right edge)
+    bounds.x = canvasW + hudPanels.right.x * dpr;
+    bounds.y = hudPanels.right.y * dpr;
+    bounds.width = 170 * dpr;
+    bounds.height = 150 * dpr;
+  } else if (panelId === 'stats') {
+    bounds.width = 350 * dpr;
+    bounds.height = 120 * dpr;
+    bounds.x = hudPanels.center.x === 0 ? (canvasW - bounds.width) / 2 : hudPanels.center.x * dpr;
+    bounds.y = hudPanels.center.y === 0 ? canvasH - bounds.height - 30 * dpr : hudPanels.center.y * dpr;
+  }
+  return bounds;
+}
+
+function hitTestPanel(mouseX, mouseY, canvasW, canvasH, dpr) {
+  // Check stats panel first (on top)
+  const statsBounds = getPanelBounds('stats', canvasW, canvasH, dpr);
+  if (mouseX >= statsBounds.x && mouseX <= statsBounds.x + statsBounds.width &&
+      mouseY >= statsBounds.y && mouseY <= statsBounds.y + statsBounds.height) {
+    return 'stats';
+  }
+
+  // Check left panel
+  const leftBounds = getPanelBounds('left', canvasW, canvasH, dpr);
+  if (mouseX >= leftBounds.x && mouseX <= leftBounds.x + leftBounds.width &&
+      mouseY >= leftBounds.y && mouseY <= leftBounds.y + leftBounds.height) {
+    return 'left';
+  }
+
+  // Check right panel
+  const rightBounds = getPanelBounds('right', canvasW, canvasH, dpr);
+  if (mouseX >= rightBounds.x && mouseX <= rightBounds.x + rightBounds.width &&
+      mouseY >= rightBounds.y && mouseY <= rightBounds.y + rightBounds.height) {
+    return 'right';
+  }
+
+  return null;
+}
+
+canvasElement.addEventListener('mousedown', (e) => {
+  if (cfg.visualStyle !== 'hud') return;
+
+  const rect = canvasElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const scaleX = canvasElement.width / rect.width;
+  const scaleY = canvasElement.height / rect.height;
+  const mouseX = (e.clientX - rect.left) * scaleX;
+  const mouseY = (e.clientY - rect.top) * scaleY;
+
+  const panelId = hitTestPanel(mouseX, mouseY, canvasElement.width, canvasElement.height, dpr);
+  if (panelId) {
+    isDraggingPanel = true;
+    draggedPanelId = panelId;
+    const bounds = getPanelBounds(panelId, canvasElement.width, canvasElement.height, dpr);
+    dragOffset.x = mouseX - bounds.x;
+    dragOffset.y = mouseY - bounds.y;
+    canvasElement.style.cursor = 'grabbing';
+  }
+});
+
+canvasElement.addEventListener('mousemove', (e) => {
+  if (cfg.visualStyle !== 'hud') return;
+
+  const rect = canvasElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const scaleX = canvasElement.width / rect.width;
+  const scaleY = canvasElement.height / rect.height;
+  const mouseX = (e.clientX - rect.left) * scaleX;
+  const mouseY = (e.clientY - rect.top) * scaleY;
+
+  if (isDraggingPanel && draggedPanelId) {
+    const newX = (mouseX - dragOffset.x) / dpr;
+    const newY = (mouseY - dragOffset.y) / dpr;
+
+    if (draggedPanelId === 'left') {
+      hudPanels.left.x = Math.max(0, Math.min(newX, canvasElement.width / dpr - 200));
+      hudPanels.left.y = Math.max(50, Math.min(newY, canvasElement.height / dpr - 220));
+    } else if (draggedPanelId === 'right') {
+      // Right panel stores negative offset from right edge
+      hudPanels.right.x = newX - canvasElement.width / dpr;
+      hudPanels.right.y = Math.max(50, Math.min(newY, canvasElement.height / dpr - 170));
+    } else if (draggedPanelId === 'stats') {
+      hudPanels.center.x = Math.max(0, Math.min(newX, canvasElement.width / dpr - 360));
+      hudPanels.center.y = Math.max(50, Math.min(newY, canvasElement.height / dpr - 140));
+    }
+  } else {
+    // Update cursor on hover
+    const panelId = hitTestPanel(mouseX, mouseY, canvasElement.width, canvasElement.height, dpr);
+    canvasElement.style.cursor = panelId ? 'grab' : 'default';
+  }
+});
+
+canvasElement.addEventListener('mouseup', () => {
+  if (isDraggingPanel) {
+    isDraggingPanel = false;
+    draggedPanelId = null;
+    canvasElement.style.cursor = 'default';
+  }
+});
+
+canvasElement.addEventListener('mouseleave', () => {
+  if (isDraggingPanel) {
+    isDraggingPanel = false;
+    draggedPanelId = null;
+    canvasElement.style.cursor = 'default';
+  }
 });
 
 // ============ MUSIC THEORY ============
@@ -1448,9 +1597,9 @@ function drawHUDDataPanel(ctx, dpr) {
 
   ctx.save();
 
-  // Left panel - Note Analysis
-  const panelX = 35 * dpr;
-  const panelY = 100 * dpr;
+  // Left panel - Note Analysis (uses draggable position)
+  const panelX = hudPanels.left.x * dpr;
+  const panelY = hudPanels.left.y * dpr;
   const panelWidth = 180 * dpr;
 
   // Panel background
@@ -1539,9 +1688,9 @@ function drawHUDNoteHistory(ctx, dpr) {
 
   ctx.save();
 
-  // Right side - Note history timeline
-  const panelX = w - 200 * dpr;
-  const panelY = 100 * dpr;
+  // Right side - Note history timeline (uses draggable position)
+  const panelX = w + hudPanels.right.x * dpr;
+  const panelY = hudPanels.right.y * dpr;
   const panelWidth = 170 * dpr;
 
   // Panel background
@@ -1587,6 +1736,172 @@ function drawHUDNoteHistory(ctx, dpr) {
   }
 
   ctx.restore();
+}
+
+function drawHUDStatsPanel(ctx, dpr) {
+  const colors = getThemeColors();
+  const [r, g, b] = colors.primary;
+  const [sr, sg, sb] = colors.secondary;
+  const [ar, ag, ab] = colors.accent;
+  const intensity = cfg.hudIntensity;
+  const w = canvasElement.width;
+  const h = canvasElement.height;
+
+  ctx.save();
+
+  // Update note statistics when a note is detected
+  if (displayNote && displayNote.length > 0) {
+    const baseNote = displayNote.replace(/[0-9m#b]/g, '').charAt(0) + (displayNote.includes('#') ? '#' : '');
+    if (noteStats[baseNote] !== undefined) {
+      noteStats[baseNote]++;
+      totalNotesPlayed++;
+    }
+  }
+
+  // Generate chord suggestions based on recent note history
+  updateChordSuggestions();
+
+  // Bottom panel - Statistics & Chord Suggestions (uses draggable position)
+  const panelWidth = 350 * dpr;
+  const panelHeight = 120 * dpr;
+  // Use center position if set, otherwise default to centered at bottom
+  const panelX = hudPanels.center.x === 0 ? (w - panelWidth) / 2 : hudPanels.center.x * dpr;
+  const panelY = hudPanels.center.y === 0 ? h - panelHeight - 30 * dpr : hudPanels.center.y * dpr;
+
+  // Panel background
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.5 * intensity})`;
+  ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+
+  // Panel border
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.4 * intensity})`;
+  ctx.lineWidth = 1 * dpr;
+  ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+  // Current note display (large, centered in panel)
+  ctx.textAlign = 'center';
+  ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 1)`;
+  ctx.shadowBlur = 20 * dpr;
+  ctx.fillStyle = `rgba(255, 255, 255, ${intensity})`;
+  ctx.font = `900 ${36 * dpr}px 'Montserrat'`;
+  ctx.fillText(displayNote || '--', panelX + panelWidth / 2, panelY + 40 * dpr);
+  ctx.shadowBlur = 0;
+
+  // Frequency below note
+  ctx.font = `600 ${10 * dpr}px 'Montserrat'`;
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.8 * intensity})`;
+  ctx.fillText(`${detectedFrequency.toFixed(1)} Hz`, panelX + panelWidth / 2, panelY + 55 * dpr);
+
+  // Chord suggestions section (left side)
+  ctx.textAlign = 'left';
+  ctx.font = `700 ${8 * dpr}px 'Montserrat'`;
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.9 * intensity})`;
+  ctx.fillText('CHORD SUGGESTIONS', panelX + 15 * dpr, panelY + 75 * dpr);
+
+  ctx.font = `600 ${10 * dpr}px 'Montserrat'`;
+  ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * intensity})`;
+  const chordText = chordSuggestions.length > 0 ? chordSuggestions.slice(0, 4).join(' | ') : 'Play more notes...';
+  ctx.fillText(chordText, panelX + 15 * dpr, panelY + 92 * dpr);
+
+  // Session stats (right side)
+  ctx.textAlign = 'right';
+  ctx.font = `700 ${8 * dpr}px 'Montserrat'`;
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.9 * intensity})`;
+  ctx.fillText('SESSION', panelX + panelWidth - 15 * dpr, panelY + 75 * dpr);
+
+  const sessionDuration = Math.floor((Date.now() - sessionStartTime) / 1000);
+  const minutes = Math.floor(sessionDuration / 60);
+  const seconds = sessionDuration % 60;
+  ctx.font = `600 ${10 * dpr}px 'Montserrat'`;
+  ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * intensity})`;
+  ctx.fillText(`${minutes}:${seconds.toString().padStart(2, '0')} | ${totalNotesPlayed} notes`, panelX + panelWidth - 15 * dpr, panelY + 92 * dpr);
+
+  // Note usage bar chart at very bottom
+  const barAreaY = panelY + 102 * dpr;
+  const barWidth = (panelWidth - 30 * dpr) / 12;
+  const maxBarHeight = 12 * dpr;
+  const maxCount = Math.max(...Object.values(noteStats), 1);
+
+  for (let i = 0; i < 12; i++) {
+    const note = noteStrings[i];
+    const count = noteStats[note];
+    const barHeight = (count / maxCount) * maxBarHeight;
+    const barX = panelX + 15 * dpr + i * barWidth;
+
+    // Bar background
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.2 * intensity})`;
+    ctx.fillRect(barX + 1, barAreaY, barWidth - 2, maxBarHeight);
+
+    // Bar fill
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.8 * intensity})`;
+    ctx.fillRect(barX + 1, barAreaY + maxBarHeight - barHeight, barWidth - 2, barHeight);
+
+    // Note label
+    ctx.font = `600 ${5 * dpr}px 'Montserrat'`;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.6 * intensity})`;
+    ctx.textAlign = 'center';
+    ctx.fillText(note.replace('#', ''), barX + barWidth / 2, barAreaY + maxBarHeight + 8 * dpr);
+  }
+
+  ctx.restore();
+}
+
+// Generate chord suggestions based on detected notes
+function updateChordSuggestions() {
+  // Get recent unique notes from history
+  const recentNotes = new Set();
+  const now = Date.now();
+  for (const entry of noteHistory) {
+    if (now - entry.time < 5000) { // Last 5 seconds
+      recentNotes.add(entry.note);
+    }
+  }
+
+  if (recentNotes.size < 2) {
+    chordSuggestions = [];
+    return;
+  }
+
+  const suggestions = [];
+  const notesArr = Array.from(recentNotes);
+
+  // Try each note as a potential root
+  for (const root of notesArr) {
+    const rootIdx = noteStrings.indexOf(root);
+    if (rootIdx === -1) continue;
+
+    // Check what intervals are present from this root
+    const intervals = [];
+    for (const note of notesArr) {
+      const noteIdx = noteStrings.indexOf(note);
+      if (noteIdx !== -1 && noteIdx !== rootIdx) {
+        intervals.push((noteIdx - rootIdx + 12) % 12);
+      }
+    }
+
+    // Match against chord patterns
+    for (const [chordType, pattern] of Object.entries(chordPatterns)) {
+      const patternIntervals = pattern.slice(1); // Skip root
+      let matches = 0;
+      for (const int of intervals) {
+        if (patternIntervals.some(p => Math.abs(p - int) <= 1)) {
+          matches++;
+        }
+      }
+      // If at least half the intervals match
+      if (matches >= patternIntervals.length * 0.5 && matches > 0) {
+        let chordName = root;
+        if (chordType === 'minor') chordName += 'm';
+        else if (chordType === 'power') chordName += '5';
+        else if (chordType !== 'major') chordName += chordType.replace('dom', '');
+
+        if (!suggestions.includes(chordName)) {
+          suggestions.push(chordName);
+        }
+      }
+    }
+  }
+
+  chordSuggestions = suggestions.slice(0, 6);
 }
 
 function drawHUDCenterDisplay(ctx, dpr) {
@@ -1667,7 +1982,8 @@ function drawHUDMode(ctx, landmarks, dpr) {
   drawHUDFingertips(ctx, landmarks, dpr);
   drawHUDDataPanel(ctx, dpr);
   drawHUDNoteHistory(ctx, dpr);
-  drawHUDCenterDisplay(ctx, dpr);
+  drawHUDStatsPanel(ctx, dpr);
+  // Note: Center display removed - notes only shown within HUD panels
 }
 
 function drawSpectrum(ctx, dpr) {
@@ -1871,6 +2187,144 @@ function drawFretboard(ctx, dpr) {
   ctx.restore();
 }
 
+// ============ NECK MESH OVERLAY ============
+function drawNeckMesh(ctx, landmarks, dpr) {
+  if (!cfg.showNeckMesh || !landmarks) return;
+
+  const colors = getThemeColors();
+  const [r, g, b] = colors.primary;
+  const [sr, sg, sb] = colors.secondary;
+  const w = canvasElement.width;
+  const h = canvasElement.height;
+
+  ctx.save();
+
+  // Estimate neck orientation from hand position
+  // Use wrist (0) and middle finger base (9) to estimate neck angle
+  const wrist = landmarks[0];
+  const middleBase = landmarks[9];
+
+  // Convert to canvas coordinates (mirrored)
+  const wristX = (1 - wrist.x) * w;
+  const wristY = wrist.y * h;
+  const midX = (1 - middleBase.x) * w;
+  const midY = middleBase.y * h;
+
+  // Calculate hand angle
+  const handAngle = Math.atan2(midY - wristY, midX - wristX);
+
+  // Estimate neck width based on hand spread
+  const indexTip = landmarks[8];
+  const pinkyTip = landmarks[20];
+  const fingerSpread = Math.abs(indexTip.y - pinkyTip.y) * h;
+  const neckWidth = Math.max(fingerSpread * 1.5, 80 * dpr);
+
+  // Neck extends from near wrist outward in both directions
+  const neckLength = w * 0.8;
+  const neckCenterX = wristX;
+  const neckCenterY = wristY;
+
+  // Draw mesh grid
+  const fretCount = 15;
+  const stringCount = 6;
+  const fretSpacing = neckLength / fretCount;
+  const stringSpacing = neckWidth / (stringCount - 1);
+
+  // Calculate perpendicular angle for strings
+  const perpAngle = handAngle + Math.PI / 2;
+
+  ctx.globalAlpha = 0.5;
+
+  // Draw fret lines (perpendicular to neck)
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.6)`;
+  ctx.lineWidth = 2 * dpr;
+
+  for (let f = 0; f <= fretCount; f++) {
+    const fretDist = (f - fretCount / 2) * fretSpacing * 0.7;
+    const fretX = neckCenterX + Math.cos(handAngle) * fretDist;
+    const fretY = neckCenterY + Math.sin(handAngle) * fretDist;
+
+    ctx.beginPath();
+    ctx.moveTo(
+      fretX + Math.cos(perpAngle) * neckWidth / 2,
+      fretY + Math.sin(perpAngle) * neckWidth / 2
+    );
+    ctx.lineTo(
+      fretX - Math.cos(perpAngle) * neckWidth / 2,
+      fretY - Math.sin(perpAngle) * neckWidth / 2
+    );
+    ctx.stroke();
+
+    // Fret number label
+    if (f > 0 && f <= 12) {
+      ctx.font = `600 ${8 * dpr}px 'Montserrat'`;
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+      ctx.textAlign = 'center';
+      ctx.fillText(f.toString(), fretX, fretY - neckWidth / 2 - 8 * dpr);
+    }
+  }
+
+  // Draw string lines (parallel to neck)
+  ctx.strokeStyle = `rgba(255, 255, 255, 0.4)`;
+  ctx.lineWidth = 1 * dpr;
+
+  for (let s = 0; s < stringCount; s++) {
+    const stringOffset = (s - (stringCount - 1) / 2) * stringSpacing;
+    const startX = neckCenterX - Math.cos(handAngle) * neckLength / 2 + Math.cos(perpAngle) * stringOffset;
+    const startY = neckCenterY - Math.sin(handAngle) * neckLength / 2 + Math.sin(perpAngle) * stringOffset;
+    const endX = neckCenterX + Math.cos(handAngle) * neckLength / 2 + Math.cos(perpAngle) * stringOffset;
+    const endY = neckCenterY + Math.sin(handAngle) * neckLength / 2 + Math.sin(perpAngle) * stringOffset;
+
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+  }
+
+  // Draw fret markers (at 3, 5, 7, 9, 12)
+  const markerFrets = [3, 5, 7, 9, 12];
+  ctx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, 0.5)`;
+
+  for (const fret of markerFrets) {
+    const fretDist = (fret - fretCount / 2) * fretSpacing * 0.7;
+    const markerX = neckCenterX + Math.cos(handAngle) * fretDist;
+    const markerY = neckCenterY + Math.sin(handAngle) * fretDist;
+
+    if (fret === 12) {
+      // Double dot for 12th fret
+      ctx.beginPath();
+      ctx.arc(markerX + Math.cos(perpAngle) * neckWidth / 4, markerY + Math.sin(perpAngle) * neckWidth / 4, 4 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(markerX - Math.cos(perpAngle) * neckWidth / 4, markerY - Math.sin(perpAngle) * neckWidth / 4, 4 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(markerX, markerY, 4 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Highlight detected finger positions on the mesh
+  const fingerTips = [8, 12, 16, 20]; // Index, middle, ring, pinky
+  ctx.fillStyle = `rgba(255, 255, 255, 0.9)`;
+  ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 1)`;
+  ctx.shadowBlur = 10 * dpr;
+
+  for (const tip of fingerTips) {
+    const tipX = (1 - landmarks[tip].x) * w;
+    const tipY = landmarks[tip].y * h;
+
+    // Draw glowing dot at fingertip
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 6 * dpr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
 // ============ MAIN NOTE DISPLAY ============
 function handleNoteDisplay(x, y, dpr) {
   if (displayNote !== lastRenderedNote) {
@@ -1978,6 +2432,7 @@ function onHandResults(results) {
     // Draw background effects first (non-HUD modes)
     drawSpectrum(canvasCtx, dpr);
     drawFretboard(canvasCtx, dpr);
+    drawNeckMesh(canvasCtx, lastKnownHandLandmarks, dpr);
 
     // Update and draw all visual effects
     updateAndDrawPulseRings(canvasCtx, dpr);
@@ -1994,13 +2449,23 @@ function onHandResults(results) {
 
   if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
     for (const [index, landmarks] of results.multiHandLandmarks.entries()) {
+      // MediaPipe labels hands from its perspective, so in mirrored view:
+      // User's LEFT hand = MediaPipe 'Right' label (appears on right of mirrored frame)
+      // User's RIGHT hand = MediaPipe 'Left' label (appears on left of mirrored frame)
+      const label = results.multiHandedness[index]?.label;
+      const isUserLeftHand = label === 'Right'; // User's left hand (fretting hand)
+
+      // In HUD mode, only track the user's left hand (fretting hand)
+      if (isHudMode && !isUserLeftHand) {
+        continue; // Skip user's right hand in HUD mode
+      }
+
       if (!isHudMode) {
         drawHand(canvasCtx, landmarks, dpr);
       }
 
-      // Use the first detected hand (prefer left for fretting hand)
-      const label = results.multiHandedness[index]?.label;
-      if (!handFound || label === 'Left') {
+      // Use this hand for note display
+      if (!handFound || isUserLeftHand) {
         // Get fingertip position for note display
         activeHandX = (1.0 - landmarks[8].x) * canvasElement.width;
         activeHandY = landmarks[8].y * canvasElement.height;
@@ -2012,7 +2477,7 @@ function onHandResults(results) {
 
         // Estimate fret position
         estimatedFret = estimateFretPosition(landmarks);
-        if (cfg.showFretboard && !isHudMode) {
+        if ((cfg.showFretboard || cfg.showNeckMesh) && !isHudMode) {
           fretDisplay.style.display = 'block';
           fretNumSpan.textContent = estimatedFret >= 0 ? estimatedFret : '-';
         } else {
@@ -2052,6 +2517,7 @@ function toggleRecording() {
 
 // Quality presets for recording
 const qualityPresets = {
+  ultra120: { videoBps: 50000000, audioBps: 320000, fps: 120 },
   ultra: { videoBps: 35000000, audioBps: 256000, fps: 60 },
   high: { videoBps: 20000000, audioBps: 192000, fps: 60 },
   medium: { videoBps: 12000000, audioBps: 128000, fps: 30 },
@@ -2148,9 +2614,23 @@ async function initApp() {
   try {
     log("Requesting camera and microphone...");
 
+    // Request audio with AGC/noise suppression disabled for consistent guitar audio
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1280, height: 720 },
-      audio: true
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 60, max: 120 }
+      },
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        // Fallback for older browsers
+        googEchoCancellation: false,
+        googNoiseSuppression: false,
+        googAutoGainControl: false,
+        googHighpassFilter: false
+      }
     });
     globalStream = stream;
 
