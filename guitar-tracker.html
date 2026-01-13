@@ -1,0 +1,1496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Guitar Fret Tracker - Social Media Video Creator</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #0a0a0a;
+      color: #fff;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Montserrat', sans-serif;
+    }
+
+    .container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 1280px;
+      max-height: 720px;
+    }
+
+    video { display: none; }
+
+    canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: contrast(110%) saturate(115%) brightness(0.9);
+    }
+
+    .container::after {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.5) 100%);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    #status {
+      position: absolute;
+      bottom: 15px;
+      left: 15px;
+      color: #555;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      z-index: 50;
+      text-transform: uppercase;
+    }
+
+    #fretDisplay {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 14px;
+      font-weight: 700;
+      color: #0ff;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 16px;
+      border-radius: 8px;
+      z-index: 50;
+      display: none;
+    }
+
+    /* --- CONTROLS PANEL --- */
+    #controls {
+      position: absolute;
+      right: 15px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 220px;
+      max-height: 90vh;
+      background: rgba(10, 10, 10, 0.92);
+      backdrop-filter: blur(20px);
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      z-index: 100;
+      opacity: 0;
+      transition: opacity 0.5s;
+      pointer-events: none;
+      overflow-y: auto;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.6);
+    }
+
+    #controls::-webkit-scrollbar { width: 4px; }
+    #controls::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+    #controls.visible { opacity: 1; pointer-events: auto; }
+
+    .section-header {
+      font-size: 9px;
+      font-weight: 800;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 18px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #2a2a2a;
+      padding-bottom: 6px;
+    }
+    .section-header:first-child { margin-top: 0; }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      margin-bottom: 14px;
+    }
+
+    .control-group label {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      color: #888;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .control-group label .value { color: #0ff; font-weight: 700; }
+
+    input[type=range] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #0ff;
+      height: 4px;
+      border-radius: 2px;
+      background: #2a2a2a;
+      appearance: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 14px;
+      width: 14px;
+      border-radius: 50%;
+      background: #0ff;
+      margin-top: -5px;
+      box-shadow: 0 0 10px rgba(0,255,255,0.5);
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 4px;
+      background: #2a2a2a;
+      border-radius: 2px;
+    }
+
+    .toggle-row {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .toggle-text { font-size: 11px; font-weight: 700; color: #ddd; }
+
+    .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #2a2a2a;
+      transition: .3s;
+      border-radius: 20px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #666;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider { background-color: #0ff; }
+    input:checked + .slider:before { transform: translateX(16px); background-color: #000; }
+
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      background: #1a1a1a;
+      color: #fff;
+      border: 1px solid #333;
+      border-radius: 8px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23666' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+
+    select:focus { outline: none; border-color: #0ff; }
+
+    /* RECORD BUTTON */
+    .btn-record {
+      width: 100%;
+      padding: 12px 0;
+      border-radius: 10px;
+      border: none;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 800;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    }
+
+    .btn-record:hover {
+      background: linear-gradient(135deg, #222 0%, #111 100%);
+      transform: translateY(-1px);
+    }
+
+    .btn-record.recording {
+      background: linear-gradient(135deg, #600 0%, #400 100%);
+      color: #fcc;
+      box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+      animation: recordPulse 1.5s infinite;
+    }
+
+    .rec-dot {
+      width: 10px;
+      height: 10px;
+      background: #f00;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #f00;
+    }
+
+    .recording .rec-dot { background: #fff; box-shadow: 0 0 8px #fff; }
+
+    @keyframes recordPulse {
+      0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.5); }
+      70% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+    }
+
+    /* Visual Theme Selector */
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .theme-btn {
+      aspect-ratio: 1;
+      border-radius: 6px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .theme-btn:hover { transform: scale(1.1); }
+    .theme-btn.active { border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.3); }
+
+    .theme-btn.neon { background: linear-gradient(135deg, #0ff, #f0f); }
+    .theme-btn.fire { background: linear-gradient(135deg, #f80, #f00); }
+    .theme-btn.ocean { background: linear-gradient(135deg, #0af, #06f); }
+    .theme-btn.matrix { background: linear-gradient(135deg, #0f0, #080); }
+    .theme-btn.sunset { background: linear-gradient(135deg, #f60, #f0a); }
+    .theme-btn.arctic { background: linear-gradient(135deg, #8ff, #88f); }
+    .theme-btn.gold { background: linear-gradient(135deg, #fc0, #f80); }
+    .theme-btn.purple { background: linear-gradient(135deg, #a0f, #60f); }
+
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <video id="input_video" playsinline muted></video>
+  <canvas id="output_canvas"></canvas>
+  <div id="status">Initializing...</div>
+  <div id="fretDisplay">Fret: <span id="fretNum">-</span></div>
+
+  <div id="controls">
+
+    <div class="section-header">Recording</div>
+    <button id="btnRecord" class="btn-record">
+      <span class="rec-dot"></span>
+      <span id="btnRecordText">Start Recording</span>
+    </button>
+
+    <div class="section-header">Visual Theme</div>
+    <div class="theme-grid">
+      <div class="theme-btn neon active" data-theme="neon" title="Neon"></div>
+      <div class="theme-btn fire" data-theme="fire" title="Fire"></div>
+      <div class="theme-btn ocean" data-theme="ocean" title="Ocean"></div>
+      <div class="theme-btn matrix" data-theme="matrix" title="Matrix"></div>
+      <div class="theme-btn sunset" data-theme="sunset" title="Sunset"></div>
+      <div class="theme-btn arctic" data-theme="arctic" title="Arctic"></div>
+      <div class="theme-btn gold" data-theme="gold" title="Gold"></div>
+      <div class="theme-btn purple" data-theme="purple" title="Purple"></div>
+    </div>
+
+    <div class="control-group">
+      <label>Visual Style</label>
+      <select id="visualStyle">
+        <option value="explosive" selected>Explosive Burst</option>
+        <option value="waves">Sound Waves</option>
+        <option value="lightning">Lightning</option>
+        <option value="particles">Particle Storm</option>
+        <option value="rings">Pulse Rings</option>
+        <option value="flames">Flames</option>
+      </select>
+    </div>
+
+    <div class="section-header">Effects</div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Hand Skeleton</span>
+      <label class="switch">
+        <input type="checkbox" id="showHand" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Fretboard Overlay</span>
+      <label class="switch">
+        <input type="checkbox" id="showFretboard">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Note Trail</span>
+      <label class="switch">
+        <input type="checkbox" id="showTrail" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Spectrum Visualizer</span>
+      <label class="switch">
+        <input type="checkbox" id="showSpectrum" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="section-header">Display</div>
+
+    <div class="control-group">
+      <label>Note Size <span class="value" id="noteSizeVal">60</span></label>
+      <input type="range" id="noteSize" min="20" max="150" value="60">
+    </div>
+
+    <div class="control-group">
+      <label>Effect Intensity <span class="value" id="effectIntensityVal">80</span>%</label>
+      <input type="range" id="effectIntensity" min="0" max="100" value="80">
+    </div>
+
+    <div class="control-group">
+      <label>Particle Count <span class="value" id="particleCountVal">15</span></label>
+      <input type="range" id="particleCount" min="5" max="50" value="15">
+    </div>
+
+    <div class="section-header">Audio</div>
+
+    <div class="control-group">
+      <label>Noise Gate <span class="value" id="noiseGateVal">12</span></label>
+      <input type="range" id="noiseGate" min="1" max="40" value="12">
+    </div>
+
+    <div class="control-group">
+      <label>Sensitivity <span class="value" id="sensitivityVal">70</span>%</label>
+      <input type="range" id="sensitivity" min="20" max="100" value="70">
+    </div>
+
+  </div>
+</div>
+
+<script>
+console.log(">>> Guitar Fret Tracker - Social Media Edition");
+
+// ============ DOM ELEMENTS ============
+const videoElement = document.getElementById('input_video');
+const canvasElement = document.getElementById('output_canvas');
+const canvasCtx = canvasElement.getContext('2d');
+const statusDiv = document.getElementById('status');
+const controlsDiv = document.getElementById('controls');
+const fretDisplay = document.getElementById('fretDisplay');
+const fretNumSpan = document.getElementById('fretNum');
+
+// ============ CONFIGURATION ============
+const cfg = {
+  noteSize: 60,
+  effectIntensity: 0.8,
+  particleCount: 15,
+  noiseGate: 12,
+  sensitivity: 70,
+  showHand: true,
+  showFretboard: false,
+  showTrail: true,
+  showSpectrum: true,
+  visualStyle: 'explosive',
+  theme: 'neon'
+};
+
+// Theme color definitions
+const themes = {
+  neon: { primary: [0, 255, 255], secondary: [255, 0, 255], accent: [255, 255, 0] },
+  fire: { primary: [255, 100, 0], secondary: [255, 0, 0], accent: [255, 200, 0] },
+  ocean: { primary: [0, 170, 255], secondary: [0, 100, 255], accent: [100, 255, 255] },
+  matrix: { primary: [0, 255, 0], secondary: [0, 180, 0], accent: [150, 255, 150] },
+  sunset: { primary: [255, 100, 50], secondary: [255, 50, 150], accent: [255, 200, 100] },
+  arctic: { primary: [150, 220, 255], secondary: [100, 150, 255], accent: [200, 255, 255] },
+  gold: { primary: [255, 200, 0], secondary: [255, 150, 0], accent: [255, 255, 150] },
+  purple: { primary: [180, 0, 255], secondary: [100, 0, 255], accent: [255, 100, 255] }
+};
+
+// ============ STATE VARIABLES ============
+let hands, camera, audioContext, analyser, globalStream;
+let particles = [];
+let noteTrail = [];
+let pulseRings = [];
+let lightningBolts = [];
+let flames = [];
+let wavePoints = [];
+let spectrumData = [];
+
+let displayNote = "";
+let lastRenderedNote = "";
+let candidateNote = "";
+let candidateStartTime = 0;
+let currentHue = 180;
+let activeNoteStartTime = 0;
+let activeNoteScale = 1.0;
+
+let lastKnownHandX = -1;
+let lastKnownHandY = -1;
+let lastKnownHandLandmarks = null;
+let estimatedFret = -1;
+
+// Recording
+let mediaRecorder;
+let recordedChunks = [];
+const btnRecord = document.getElementById('btnRecord');
+const btnRecordText = document.getElementById('btnRecordText');
+
+// ============ UI BINDINGS ============
+document.getElementById('noteSize').oninput = (e) => {
+  cfg.noteSize = parseInt(e.target.value);
+  document.getElementById('noteSizeVal').textContent = cfg.noteSize;
+};
+
+document.getElementById('effectIntensity').oninput = (e) => {
+  cfg.effectIntensity = parseInt(e.target.value) / 100;
+  document.getElementById('effectIntensityVal').textContent = e.target.value;
+};
+
+document.getElementById('particleCount').oninput = (e) => {
+  cfg.particleCount = parseInt(e.target.value);
+  document.getElementById('particleCountVal').textContent = cfg.particleCount;
+};
+
+document.getElementById('noiseGate').oninput = (e) => {
+  cfg.noiseGate = parseInt(e.target.value);
+  document.getElementById('noiseGateVal').textContent = cfg.noiseGate;
+};
+
+document.getElementById('sensitivity').oninput = (e) => {
+  cfg.sensitivity = parseInt(e.target.value);
+  document.getElementById('sensitivityVal').textContent = cfg.sensitivity;
+};
+
+document.getElementById('showHand').onchange = (e) => cfg.showHand = e.target.checked;
+document.getElementById('showFretboard').onchange = (e) => cfg.showFretboard = e.target.checked;
+document.getElementById('showTrail').onchange = (e) => cfg.showTrail = e.target.checked;
+document.getElementById('showSpectrum').onchange = (e) => cfg.showSpectrum = e.target.checked;
+document.getElementById('visualStyle').onchange = (e) => cfg.visualStyle = e.target.value;
+
+// Theme selection
+document.querySelectorAll('.theme-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    cfg.theme = btn.dataset.theme;
+  };
+});
+
+// ============ MUSIC THEORY ============
+const noteStrings = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+// Guitar string frequencies (standard tuning: E2, A2, D3, G3, B3, E4)
+const guitarStrings = [82.41, 110.00, 146.83, 196.00, 246.94, 329.63];
+
+// Common chord patterns
+const chordPatterns = {
+  'major': [0, 4, 7],
+  'minor': [0, 3, 7],
+  'dom7': [0, 4, 7, 10],
+  'maj7': [0, 4, 7, 11],
+  'min7': [0, 3, 7, 10],
+  'sus4': [0, 5, 7],
+  'sus2': [0, 2, 7],
+  'dim': [0, 3, 6],
+  'aug': [0, 4, 8],
+  'power': [0, 7]
+};
+
+function noteFromPitch(frequency) {
+  const noteNum = 12 * (Math.log(frequency / 440) / Math.log(2));
+  return Math.round(noteNum) + 69;
+}
+
+function frequencyToNote(freq) {
+  if (freq < 60 || freq > 2000) return null;
+  const noteNum = noteFromPitch(freq);
+  const noteIndex = noteNum % 12;
+  const octave = Math.floor(noteNum / 12) - 1;
+  return { name: noteStrings[noteIndex], octave, index: noteIndex, noteNum };
+}
+
+// ============ PITCH DETECTION ============
+function autoCorrelate(buf, sampleRate) {
+  let SIZE = buf.length;
+  let rms = 0;
+
+  for (let i = 0; i < SIZE; i++) {
+    rms += buf[i] * buf[i];
+  }
+  rms = Math.sqrt(rms / SIZE);
+
+  const threshold = cfg.noiseGate / 500.0;
+  if (rms < threshold) return -1;
+
+  let r1 = 0, r2 = SIZE - 1;
+  const thres = 0.2;
+
+  for (let i = 0; i < SIZE / 2; i++) {
+    if (Math.abs(buf[i]) < thres) { r1 = i; break; }
+  }
+  for (let i = 1; i < SIZE / 2; i++) {
+    if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; }
+  }
+
+  buf = buf.slice(r1, r2);
+  SIZE = buf.length;
+
+  if (SIZE < 10) return -1;
+
+  const c = new Array(SIZE).fill(0);
+  for (let i = 0; i < SIZE; i++) {
+    for (let j = 0; j < SIZE - i; j++) {
+      c[i] += buf[j] * buf[j + i];
+    }
+  }
+
+  let d = 0;
+  while (c[d] > c[d + 1]) d++;
+
+  let maxval = -1, maxpos = -1;
+  for (let i = d; i < SIZE; i++) {
+    if (c[i] > maxval) {
+      maxval = c[i];
+      maxpos = i;
+    }
+  }
+
+  if (maxpos <= 0) return -1;
+  return sampleRate / maxpos;
+}
+
+// Enhanced chord detection using chroma vectors
+function detectChord(handXNorm) {
+  if (!analyser) return { notes: [], dominant: "", chordName: "" };
+
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  analyser.getByteFrequencyData(dataArray);
+
+  // Store for spectrum visualization
+  spectrumData = Array.from(dataArray);
+
+  const chroma = new Array(12).fill(0);
+  const binFreq = audioContext.sampleRate / analyser.fftSize;
+
+  const startFreq = 70;
+  const endFreq = 1400;
+  const startBin = Math.floor(startFreq / binFreq);
+  const endBin = Math.min(Math.floor(endFreq / binFreq), bufferLength - 1);
+
+  const gateThreshold = 50 + (cfg.noiseGate * 2);
+  const sensitivityMult = cfg.sensitivity / 50;
+
+  for (let i = startBin; i < endBin; i++) {
+    const val = dataArray[i] * sensitivityMult;
+
+    if (val > gateThreshold) {
+      // Peak detection
+      if (i > 0 && i < bufferLength - 1 && val > dataArray[i-1] && val > dataArray[i+1]) {
+        const freq = i * binFreq;
+
+        // Harmonic validation
+        const harmonicIdx = i * 2;
+        const harmonicVal = (harmonicIdx < bufferLength) ? dataArray[harmonicIdx] : 0;
+        const harmonicBonus = (harmonicVal > val * 0.3) ? 1.4 : 1.0;
+
+        // Visual assist based on hand position
+        let visualWeight = 1.0;
+        if (handXNorm >= 0) {
+          const expectedFreq = 80 + (handXNorm * 800);
+          const dist = Math.abs(freq - expectedFreq);
+          if (dist < 120) visualWeight = 1.5;
+          else if (dist > 350) visualWeight = 0.7;
+        }
+
+        const noteNum = noteFromPitch(freq);
+        const chromaIndex = noteNum % 12;
+        chroma[chromaIndex] += val * harmonicBonus * visualWeight;
+      }
+    }
+  }
+
+  // Find peak and detected notes
+  let peak = 0;
+  for (const c of chroma) if (c > peak) peak = c;
+  if (peak < 100) return { notes: [], dominant: "", chordName: "" };
+
+  const threshold = peak * 0.85;
+  const detectedNotes = [];
+  let dominantNote = "";
+  let dominantIndex = -1;
+
+  for (let i = 0; i < 12; i++) {
+    if (chroma[i] >= threshold) {
+      detectedNotes.push(noteStrings[i]);
+      if (chroma[i] === peak) {
+        dominantNote = noteStrings[i];
+        dominantIndex = i;
+      }
+    }
+  }
+
+  // Identify chord
+  let chordName = dominantNote;
+  if (detectedNotes.length > 1 && dominantIndex >= 0) {
+    const intervals = [];
+    for (const note of detectedNotes) {
+      const noteIdx = noteStrings.indexOf(note);
+      const interval = (noteIdx - dominantIndex + 12) % 12;
+      if (interval > 0) intervals.push(interval);
+    }
+    intervals.sort((a, b) => a - b);
+
+    // Match to chord patterns
+    for (const [name, pattern] of Object.entries(chordPatterns)) {
+      const patternIntervals = pattern.slice(1);
+      if (patternIntervals.length === intervals.length &&
+          patternIntervals.every((p, i) => p === intervals[i])) {
+        if (name === 'major') chordName = dominantNote;
+        else if (name === 'minor') chordName = dominantNote + 'm';
+        else if (name === 'power') chordName = dominantNote + '5';
+        else chordName = dominantNote + name.replace('dom', '');
+        break;
+      }
+    }
+  }
+
+  return { notes: detectedNotes, dominant: dominantNote, chordName };
+}
+
+// ============ FRET ESTIMATION ============
+function estimateFretPosition(landmarks) {
+  if (!landmarks) return -1;
+
+  // Use fingertip positions relative to hand bounding box
+  const tips = [8, 12, 16, 20]; // Index, middle, ring, pinky tips
+  const wrist = landmarks[0];
+  const middleBase = landmarks[9];
+
+  // Calculate hand "spread" - how stretched out the fingers are
+  let avgTipY = 0;
+  for (const tip of tips) {
+    avgTipY += landmarks[tip].y;
+  }
+  avgTipY /= tips.length;
+
+  // Estimate fret based on X position (assuming guitar neck is horizontal)
+  // Lower frets are typically on the left (for right-handed player in mirror view)
+  const handCenterX = (landmarks[0].x + landmarks[9].x) / 2;
+
+  // Map X position to fret (0-12 frets visible typically)
+  // In mirrored view, right side of frame = lower frets
+  const fretEstimate = Math.round((1 - handCenterX) * 12);
+  return Math.max(0, Math.min(12, fretEstimate));
+}
+
+// ============ AUDIO PROCESSING LOOP ============
+function updatePitch() {
+  if (!analyser) return;
+
+  let normX = -1;
+  if (lastKnownHandX !== -1) {
+    normX = 1.0 - (lastKnownHandX / canvasElement.width);
+  }
+
+  const result = detectChord(normX);
+  const now = Date.now();
+
+  if (result.dominant !== "") {
+    if (result.dominant !== candidateNote) {
+      candidateNote = result.dominant;
+      candidateStartTime = now;
+    } else {
+      const lockTime = 60;
+      if (now - candidateStartTime > lockTime) {
+        displayNote = result.chordName || result.dominant;
+        const noteIndex = noteStrings.indexOf(result.dominant);
+        if (noteIndex > -1) currentHue = noteIndex * 30;
+      }
+    }
+  } else {
+    if (now - candidateStartTime > 150) {
+      if (now - activeNoteStartTime > 400) displayNote = "";
+    }
+  }
+
+  requestAnimationFrame(updatePitch);
+}
+
+// ============ VISUAL EFFECTS ============
+function getThemeColors() {
+  return themes[cfg.theme] || themes.neon;
+}
+
+function spawnParticles(x, y, count, hue) {
+  const colors = getThemeColors();
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
+    const speed = 4 + Math.random() * 8;
+    const colorChoice = Math.random();
+    let color;
+    if (colorChoice < 0.5) color = colors.primary;
+    else if (colorChoice < 0.8) color = colors.secondary;
+    else color = colors.accent;
+
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1.0,
+      size: 2 + Math.random() * 4,
+      color,
+      gravity: cfg.visualStyle === 'flames' ? -0.15 : 0.1
+    });
+  }
+}
+
+function spawnPulseRing(x, y) {
+  const colors = getThemeColors();
+  pulseRings.push({
+    x, y,
+    radius: 10,
+    maxRadius: 150 + Math.random() * 100,
+    life: 1.0,
+    color: colors.primary,
+    lineWidth: 3 + Math.random() * 2
+  });
+}
+
+function spawnLightning(x, y) {
+  const colors = getThemeColors();
+  const bolts = [];
+  const numBolts = 3 + Math.floor(Math.random() * 4);
+
+  for (let b = 0; b < numBolts; b++) {
+    const points = [{ x, y }];
+    let cx = x, cy = y;
+    const angle = Math.random() * Math.PI * 2;
+    const length = 80 + Math.random() * 120;
+    const segments = 5 + Math.floor(Math.random() * 5);
+
+    for (let i = 0; i < segments; i++) {
+      const progress = (i + 1) / segments;
+      cx += Math.cos(angle) * (length / segments) + (Math.random() - 0.5) * 40;
+      cy += Math.sin(angle) * (length / segments) + (Math.random() - 0.5) * 40;
+      points.push({ x: cx, y: cy });
+    }
+
+    bolts.push(points);
+  }
+
+  lightningBolts.push({
+    bolts,
+    life: 1.0,
+    color: colors.accent
+  });
+}
+
+function spawnFlames(x, y, count) {
+  const colors = getThemeColors();
+  for (let i = 0; i < count; i++) {
+    flames.push({
+      x: x + (Math.random() - 0.5) * 30,
+      y: y,
+      vx: (Math.random() - 0.5) * 2,
+      vy: -3 - Math.random() * 5,
+      life: 1.0,
+      size: 8 + Math.random() * 12,
+      color: colors.primary
+    });
+  }
+}
+
+function spawnWave(x, y) {
+  const colors = getThemeColors();
+  const numPoints = 20;
+  const points = [];
+  for (let i = 0; i < numPoints; i++) {
+    points.push({
+      angle: (Math.PI * 2 / numPoints) * i,
+      radius: 30,
+      amplitude: 20 + Math.random() * 30,
+      frequency: 2 + Math.random() * 3,
+      phase: Math.random() * Math.PI * 2
+    });
+  }
+  wavePoints.push({
+    x, y,
+    points,
+    life: 1.0,
+    time: 0,
+    color: colors.primary
+  });
+}
+
+function updateAndDrawParticles(ctx, dpr) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * (dpr > 1 ? 1.5 : 1);
+    p.y += p.vy * (dpr > 1 ? 1.5 : 1);
+    p.vy += p.gravity;
+    p.life -= 0.025;
+
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+    } else {
+      ctx.save();
+      const [r, g, b] = p.color;
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${p.life * cfg.effectIntensity})`;
+      ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.8)`;
+      ctx.shadowBlur = 10 * dpr;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life * dpr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+function updateAndDrawPulseRings(ctx, dpr) {
+  for (let i = pulseRings.length - 1; i >= 0; i--) {
+    const ring = pulseRings[i];
+    ring.radius += 4 * dpr;
+    ring.life -= 0.02;
+
+    if (ring.life <= 0 || ring.radius > ring.maxRadius) {
+      pulseRings.splice(i, 1);
+    } else {
+      ctx.save();
+      const [r, g, b] = ring.color;
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${ring.life * cfg.effectIntensity})`;
+      ctx.lineWidth = ring.lineWidth * dpr * ring.life;
+      ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.5)`;
+      ctx.shadowBlur = 15 * dpr;
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, ring.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+function updateAndDrawLightning(ctx, dpr) {
+  for (let i = lightningBolts.length - 1; i >= 0; i--) {
+    const bolt = lightningBolts[i];
+    bolt.life -= 0.08;
+
+    if (bolt.life <= 0) {
+      lightningBolts.splice(i, 1);
+    } else {
+      ctx.save();
+      const [r, g, b] = bolt.color;
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${bolt.life * cfg.effectIntensity})`;
+      ctx.lineWidth = 2 * dpr;
+      ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 1)`;
+      ctx.shadowBlur = 20 * dpr;
+      ctx.lineCap = 'round';
+
+      for (const points of bolt.bolts) {
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let j = 1; j < points.length; j++) {
+          ctx.lineTo(points[j].x, points[j].y);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+function updateAndDrawFlames(ctx, dpr) {
+  for (let i = flames.length - 1; i >= 0; i--) {
+    const f = flames[i];
+    f.x += f.vx;
+    f.y += f.vy;
+    f.vy *= 0.98;
+    f.life -= 0.03;
+    f.size *= 0.97;
+
+    if (f.life <= 0) {
+      flames.splice(i, 1);
+    } else {
+      ctx.save();
+      const [r, g, b] = f.color;
+      const gradient = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size * dpr);
+      gradient.addColorStop(0, `rgba(255, 255, 200, ${f.life * cfg.effectIntensity})`);
+      gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${f.life * cfg.effectIntensity * 0.8})`);
+      gradient.addColorStop(1, `rgba(${r * 0.5}, ${g * 0.3}, 0, 0)`);
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.size * dpr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+function updateAndDrawWaves(ctx, dpr) {
+  for (let i = wavePoints.length - 1; i >= 0; i--) {
+    const wave = wavePoints[i];
+    wave.time += 0.15;
+    wave.life -= 0.015;
+
+    if (wave.life <= 0) {
+      wavePoints.splice(i, 1);
+    } else {
+      ctx.save();
+      const [r, g, b] = wave.color;
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${wave.life * cfg.effectIntensity})`;
+      ctx.lineWidth = 2 * dpr;
+      ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.5)`;
+      ctx.shadowBlur = 10 * dpr;
+
+      ctx.beginPath();
+      for (let j = 0; j <= wave.points.length; j++) {
+        const p = wave.points[j % wave.points.length];
+        const waveRadius = p.radius + Math.sin(wave.time * p.frequency + p.phase) * p.amplitude * wave.life;
+        const px = wave.x + Math.cos(p.angle) * waveRadius * (2 - wave.life);
+        const py = wave.y + Math.sin(p.angle) * waveRadius * (2 - wave.life);
+        if (j === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+function drawSpectrum(ctx, dpr) {
+  if (!cfg.showSpectrum || spectrumData.length === 0) return;
+
+  const colors = getThemeColors();
+  const [r, g, b] = colors.primary;
+  const barCount = 32;
+  const barWidth = canvasElement.width / barCount;
+  const maxHeight = 80 * dpr;
+
+  ctx.save();
+  for (let i = 0; i < barCount; i++) {
+    const dataIndex = Math.floor((i / barCount) * spectrumData.length * 0.4);
+    const value = spectrumData[dataIndex] || 0;
+    const barHeight = (value / 255) * maxHeight;
+
+    const x = i * barWidth;
+    const y = canvasElement.height - barHeight;
+
+    const gradient = ctx.createLinearGradient(x, canvasElement.height, x, y);
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.1)`);
+    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${0.5 * cfg.effectIntensity})`);
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x + 2, y, barWidth - 4, barHeight);
+  }
+  ctx.restore();
+}
+
+// ============ NOTE TRAIL ============
+function spawnNoteTrail(note, x, y, hue) {
+  const colors = getThemeColors();
+  noteTrail.push({
+    note,
+    x, y,
+    vx: 3 + Math.random() * 2,
+    vy: -1 + Math.random() * 2,
+    life: 1.0,
+    scale: 1.2,
+    hue,
+    color: colors.primary
+  });
+}
+
+function updateAndDrawNoteTrail(ctx, dpr) {
+  if (!cfg.showTrail) return;
+
+  for (let i = noteTrail.length - 1; i >= 0; i--) {
+    const item = noteTrail[i];
+    item.x += item.vx * dpr;
+    item.y += item.vy * dpr;
+    item.vx *= 0.98;
+    item.vy *= 0.98;
+    item.life -= 0.015;
+    item.scale *= 0.99;
+
+    if (item.life <= 0) {
+      noteTrail.splice(i, 1);
+    }
+  }
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (const item of noteTrail) {
+    ctx.save();
+    ctx.globalAlpha = item.life * 0.8;
+    ctx.translate(item.x, item.y);
+    ctx.scale(item.scale, item.scale);
+
+    const [r, g, b] = item.color;
+    ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.8)`;
+    ctx.shadowBlur = 15 * dpr;
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 ${cfg.noteSize * 0.6 * dpr}px 'Montserrat'`;
+    ctx.fillText(item.note, 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ============ HAND DRAWING ============
+function drawHand(ctx, landmarks, dpr) {
+  if (!cfg.showHand || !landmarks) return;
+
+  const colors = getThemeColors();
+  const [r, g, b] = colors.primary;
+
+  ctx.save();
+  ctx.translate(canvasElement.width, 0);
+  ctx.scale(-1, 1);
+
+  // Draw connections
+  const chains = [
+    [0, 1, 2, 3, 4],       // Thumb
+    [0, 5, 6, 7, 8],       // Index
+    [0, 9, 10, 11, 12],    // Middle
+    [0, 13, 14, 15, 16],   // Ring
+    [0, 17, 18, 19, 20],   // Pinky
+    [5, 9, 13, 17]         // Palm
+  ];
+
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.7)`;
+  ctx.lineWidth = 3 * dpr;
+  ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.5)`;
+  ctx.shadowBlur = 10 * dpr;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  for (const chain of chains) {
+    ctx.beginPath();
+    const start = landmarks[chain[0]];
+    ctx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
+    for (let i = 1; i < chain.length; i++) {
+      const pt = landmarks[chain[i]];
+      ctx.lineTo(pt.x * canvasElement.width, pt.y * canvasElement.height);
+    }
+    ctx.stroke();
+  }
+
+  // Draw fingertips
+  const tips = [4, 8, 12, 16, 20];
+  ctx.fillStyle = `rgba(255, 255, 255, 0.9)`;
+  for (const tip of tips) {
+    const lm = landmarks[tip];
+    ctx.beginPath();
+    ctx.arc(lm.x * canvasElement.width, lm.y * canvasElement.height, 5 * dpr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ============ FRETBOARD OVERLAY ============
+function drawFretboard(ctx, dpr) {
+  if (!cfg.showFretboard) return;
+
+  const colors = getThemeColors();
+  const [r, g, b] = colors.secondary;
+
+  const fretCount = 12;
+  const stringCount = 6;
+  const startX = canvasElement.width * 0.1;
+  const endX = canvasElement.width * 0.9;
+  const startY = canvasElement.height * 0.3;
+  const endY = canvasElement.height * 0.7;
+
+  const fretWidth = (endX - startX) / fretCount;
+  const stringHeight = (endY - startY) / (stringCount - 1);
+
+  ctx.save();
+  ctx.globalAlpha = 0.3 * cfg.effectIntensity;
+
+  // Draw frets
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.5)`;
+  ctx.lineWidth = 2 * dpr;
+  for (let i = 0; i <= fretCount; i++) {
+    const x = startX + i * fretWidth;
+    ctx.beginPath();
+    ctx.moveTo(x, startY);
+    ctx.lineTo(x, endY);
+    ctx.stroke();
+  }
+
+  // Draw strings
+  ctx.strokeStyle = `rgba(255, 255, 255, 0.4)`;
+  ctx.lineWidth = 1 * dpr;
+  for (let i = 0; i < stringCount; i++) {
+    const y = startY + i * stringHeight;
+    ctx.beginPath();
+    ctx.moveTo(startX, y);
+    ctx.lineTo(endX, y);
+    ctx.stroke();
+  }
+
+  // Draw fret markers
+  const markers = [3, 5, 7, 9, 12];
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.4)`;
+  for (const fret of markers) {
+    if (fret <= fretCount) {
+      const x = startX + (fret - 0.5) * fretWidth;
+      const y = (startY + endY) / 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 8 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Highlight estimated fret
+  if (estimatedFret >= 0 && estimatedFret <= fretCount) {
+    const x = startX + estimatedFret * fretWidth;
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
+    ctx.fillRect(x - fretWidth/2, startY - 10, fretWidth, endY - startY + 20);
+  }
+
+  ctx.restore();
+}
+
+// ============ MAIN NOTE DISPLAY ============
+function handleNoteDisplay(x, y, dpr) {
+  if (displayNote !== lastRenderedNote) {
+    // Spawn effects on note change
+    if (lastRenderedNote !== "" && cfg.showTrail) {
+      spawnNoteTrail(lastRenderedNote, x, y, currentHue);
+    }
+
+    if (displayNote !== "") {
+      activeNoteScale = 0.3;
+      activeNoteStartTime = Date.now();
+
+      // Spawn visual effects based on style
+      switch (cfg.visualStyle) {
+        case 'explosive':
+          spawnParticles(x, y, cfg.particleCount, currentHue);
+          spawnPulseRing(x, y);
+          break;
+        case 'waves':
+          spawnWave(x, y);
+          spawnParticles(x, y, cfg.particleCount / 2, currentHue);
+          break;
+        case 'lightning':
+          spawnLightning(x, y);
+          spawnParticles(x, y, cfg.particleCount / 2, currentHue);
+          break;
+        case 'particles':
+          spawnParticles(x, y, cfg.particleCount * 2, currentHue);
+          break;
+        case 'rings':
+          for (let i = 0; i < 3; i++) {
+            setTimeout(() => spawnPulseRing(x, y), i * 100);
+          }
+          break;
+        case 'flames':
+          spawnFlames(x, y, cfg.particleCount);
+          break;
+      }
+    }
+    lastRenderedNote = displayNote;
+  }
+
+  if (displayNote) {
+    // Animate scale
+    if (activeNoteScale < 1.0) {
+      activeNoteScale += (1.1 - activeNoteScale) * 0.25;
+      if (activeNoteScale > 1.02) activeNoteScale = 1.0;
+    }
+
+    // Draw the note
+    const colors = getThemeColors();
+    const [r, g, b] = colors.primary;
+
+    canvasCtx.save();
+    canvasCtx.translate(x, y);
+    canvasCtx.scale(activeNoteScale, activeNoteScale);
+
+    const fontSize = cfg.noteSize * dpr;
+
+    // Glow effect
+    canvasCtx.shadowColor = `rgba(${r}, ${g}, ${b}, 1)`;
+    canvasCtx.shadowBlur = 30 * dpr * cfg.effectIntensity;
+
+    // Text
+    canvasCtx.fillStyle = "#fff";
+    canvasCtx.font = `900 ${fontSize}px 'Montserrat'`;
+    canvasCtx.textAlign = "center";
+    canvasCtx.textBaseline = "middle";
+    canvasCtx.fillText(displayNote, 0, 0);
+
+    canvasCtx.restore();
+  }
+}
+
+// ============ CANVAS PREPARATION ============
+function prepCanvas(image) {
+  const videoW = videoElement.videoWidth;
+  const videoH = videoElement.videoHeight;
+  const dpr = window.devicePixelRatio || 1;
+
+  if (canvasElement.width !== videoW * dpr || canvasElement.height !== videoH * dpr) {
+    canvasElement.width = videoW * dpr;
+    canvasElement.height = videoH * dpr;
+    canvasElement.style.width = videoW + 'px';
+    canvasElement.style.height = videoH + 'px';
+  }
+
+  canvasCtx.save();
+  canvasCtx.translate(canvasElement.width, 0);
+  canvasCtx.scale(-1, 1);
+  canvasCtx.drawImage(image, 0, 0, canvasElement.width, canvasElement.height);
+  canvasCtx.restore();
+
+  return dpr;
+}
+
+// ============ HAND RESULTS CALLBACK ============
+function onHandResults(results) {
+  const dpr = prepCanvas(results.image);
+
+  // Draw background effects first
+  drawSpectrum(canvasCtx, dpr);
+  drawFretboard(canvasCtx, dpr);
+
+  // Update and draw all visual effects
+  updateAndDrawPulseRings(canvasCtx, dpr);
+  updateAndDrawWaves(canvasCtx, dpr);
+  updateAndDrawLightning(canvasCtx, dpr);
+  updateAndDrawFlames(canvasCtx, dpr);
+  updateAndDrawParticles(canvasCtx, dpr);
+  updateAndDrawNoteTrail(canvasCtx, dpr);
+
+  let handFound = false;
+  let activeHandX = 0, activeHandY = 0;
+
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    for (const [index, landmarks] of results.multiHandLandmarks.entries()) {
+      drawHand(canvasCtx, landmarks, dpr);
+
+      // Use the first detected hand (prefer left for fretting hand)
+      const label = results.multiHandedness[index]?.label;
+      if (!handFound || label === 'Left') {
+        // Get fingertip position for note display
+        activeHandX = (1.0 - landmarks[8].x) * canvasElement.width;
+        activeHandY = landmarks[8].y * canvasElement.height;
+        handFound = true;
+        lastKnownHandX = activeHandX;
+        lastKnownHandY = activeHandY;
+        lastKnownHandLandmarks = landmarks;
+
+        // Estimate fret position
+        estimatedFret = estimateFretPosition(landmarks);
+        if (cfg.showFretboard) {
+          fretDisplay.style.display = 'block';
+          fretNumSpan.textContent = estimatedFret >= 0 ? estimatedFret : '-';
+        } else {
+          fretDisplay.style.display = 'none';
+        }
+      }
+    }
+  }
+
+  // Display note at hand position or last known position
+  if (handFound) {
+    handleNoteDisplay(activeHandX, activeHandY, dpr);
+  } else if (lastKnownHandX !== -1) {
+    handleNoteDisplay(lastKnownHandX, lastKnownHandY, dpr);
+  }
+
+  canvasCtx.restore();
+}
+
+// ============ RECORDING ============
+btnRecord.onclick = toggleRecording;
+
+function toggleRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    btnRecord.classList.remove("recording");
+    btnRecordText.innerText = "Start Recording";
+  } else {
+    startRecording();
+  }
+}
+
+function startRecording() {
+  if (!globalStream) return;
+
+  const canvasStream = canvasElement.captureStream(30);
+  const combinedStream = new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...globalStream.getAudioTracks()
+  ]);
+
+  recordedChunks = [];
+  try {
+    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm; codecs=vp9' });
+  } catch (e) {
+    mediaRecorder = new MediaRecorder(combinedStream);
+  }
+
+  mediaRecorder.ondataavailable = (event) => {
+    if (event.data.size > 0) recordedChunks.push(event.data);
+  };
+
+  mediaRecorder.onstop = saveRecording;
+
+  mediaRecorder.start();
+  btnRecord.classList.add("recording");
+  btnRecordText.innerText = "Stop Recording";
+}
+
+function saveRecording() {
+  const blob = new Blob(recordedChunks, { type: 'video/webm' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  document.body.appendChild(a);
+  a.style.display = 'none';
+  a.href = url;
+  a.download = `guitar-tracker-${Date.now()}.webm`;
+  a.click();
+  URL.revokeObjectURL(url);
+  log("Video saved!");
+}
+
+// ============ INITIALIZATION ============
+function log(msg) { statusDiv.innerText = msg; }
+
+async function initApp() {
+  try {
+    log("Requesting camera and microphone...");
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720 },
+      audio: true
+    });
+    globalStream = stream;
+
+    // Audio setup
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(stream);
+
+    const filterLow = audioContext.createBiquadFilter();
+    filterLow.type = 'highpass';
+    filterLow.frequency.value = 70;
+
+    const filterHigh = audioContext.createBiquadFilter();
+    filterHigh.type = 'lowpass';
+    filterHigh.frequency.value = 1500;
+
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 8192;
+    analyser.smoothingTimeConstant = 0.8;
+
+    source.connect(filterLow);
+    filterLow.connect(filterHigh);
+    filterHigh.connect(analyser);
+
+    updatePitch();
+
+    // Video setup
+    videoElement.srcObject = stream;
+    await videoElement.play();
+
+    log("Loading hand tracking AI...");
+
+    hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(onHandResults);
+
+    camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({ image: videoElement });
+      },
+      width: 1280,
+      height: 720
+    });
+
+    await camera.start();
+
+    controlsDiv.classList.add('visible');
+    log("Ready - Play your guitar!");
+
+  } catch (e) {
+    console.error(e);
+    alert("Error: " + e.message);
+    log("Error: " + e.message);
+  }
+}
+
+window.onload = () => {
+  initApp();
+  document.body.onclick = () => {
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+  };
+};
+
+</script>
+
+</body>
+</html>
