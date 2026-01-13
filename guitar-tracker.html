@@ -612,8 +612,8 @@ function getPanelBounds(panelId, canvasW, canvasH, dpr) {
   if (panelId === 'left') {
     bounds.x = hudPanels.left.x * dpr;
     bounds.y = hudPanels.left.y * dpr;
-    bounds.width = 180 * dpr;
-    bounds.height = 200 * dpr;
+    bounds.width = 200 * dpr;
+    bounds.height = 280 * dpr;
   } else if (panelId === 'right') {
     // Right panel uses negative x (from right edge)
     bounds.x = canvasW + hudPanels.right.x * dpr;
@@ -784,6 +784,320 @@ const chordPatterns = {
   'aug': [0, 4, 8],
   'power': [0, 7]
 };
+
+// ============ DNA-STYLE POLYPHONIC NOTE DETECTION ============
+// Inspired by Melodyne's Direct Note Access algorithm
+// Uses harmonic template matching, spectral decomposition, and probabilistic scoring
+
+// Guitar note range: E2 (82.41 Hz) to E5 (659.25 Hz) for standard playing
+const DNA_MIN_FREQ = 75;
+const DNA_MAX_FREQ = 700;
+const DNA_NUM_HARMONICS = 8; // Number of harmonics to model per note
+
+// Pre-computed harmonic templates for each MIDI note in guitar range
+// Template shows expected relative amplitude of each harmonic (based on guitar timbre)
+const guitarHarmonicProfile = [1.0, 0.5, 0.33, 0.25, 0.2, 0.15, 0.12, 0.1]; // Typical guitar decay
+
+// All possible notes in guitar range (E2=40 to E5=76 in MIDI)
+const guitarMidiRange = { min: 40, max: 76 };
+
+// DNA state variables
+let dnaActivations = new Map(); // Current note activations (MIDI note -> activation strength)
+let dnaHistory = []; // History for temporal smoothing
+let dnaDetectedNotes = []; // Currently detected notes with confidence
+let dnaLastUpdate = 0;
+
+// Convert MIDI note to frequency
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+// Convert frequency to MIDI note (floating point for accuracy)
+function freqToMidi(freq) {
+  return 69 + 12 * Math.log2(freq / 440);
+}
+
+// Generate harmonic template for a given fundamental frequency
+function generateHarmonicTemplate(fundamentalFreq, binFreq, numBins) {
+  const template = new Float32Array(numBins);
+
+  for (let h = 1; h <= DNA_NUM_HARMONICS; h++) {
+    const harmonicFreq = fundamentalFreq * h;
+    const bin = Math.round(harmonicFreq / binFreq);
+
+    if (bin >= 0 && bin < numBins) {
+      // Spread across neighboring bins for smoothness (Gaussian-like)
+      const amplitude = guitarHarmonicProfile[h - 1];
+      for (let offset = -2; offset <= 2; offset++) {
+        const targetBin = bin + offset;
+        if (targetBin >= 0 && targetBin < numBins) {
+          const spread = Math.exp(-offset * offset / 2); // Gaussian spread
+          template[targetBin] += amplitude * spread;
+        }
+      }
+    }
+  }
+
+  // Normalize template
+  let maxVal = 0;
+  for (let i = 0; i < numBins; i++) {
+    if (template[i] > maxVal) maxVal = template[i];
+  }
+  if (maxVal > 0) {
+    for (let i = 0; i < numBins; i++) {
+      template[i] /= maxVal;
+    }
+  }
+
+  return template;
+}
+
+// Calculate how well a harmonic template matches the observed spectrum
+function templateMatchScore(spectrum, template, binFreq, fundamentalFreq) {
+  let matchScore = 0;
+  let totalWeight = 0;
+  const numBins = Math.min(spectrum.length, template.length);
+
+  // Focus on the harmonic frequencies
+  for (let h = 1; h <= DNA_NUM_HARMONICS; h++) {
+    const harmonicFreq = fundamentalFreq * h;
+    const bin = Math.round(harmonicFreq / binFreq);
+
+    if (bin >= 2 && bin < numBins - 2) {
+      // Sample spectrum around the expected harmonic location
+      let peakVal = 0;
+      for (let offset = -2; offset <= 2; offset++) {
+        peakVal = Math.max(peakVal, spectrum[bin + offset]);
+      }
+
+      const expectedWeight = guitarHarmonicProfile[h - 1];
+      const actualVal = peakVal / 255; // Normalize to 0-1
+
+      // Score based on presence of expected harmonic
+      matchScore += actualVal * expectedWeight;
+      totalWeight += expectedWeight;
+    }
+  }
+
+  return totalWeight > 0 ? matchScore / totalWeight : 0;
+}
+
+// Check for harmonic collision between two notes
+function harmonicsCollide(freq1, freq2) {
+  // Check if harmonics of one note overlap with the other
+  for (let h1 = 1; h1 <= 4; h1++) {
+    for (let h2 = 1; h2 <= 4; h2++) {
+      const harmonic1 = freq1 * h1;
+      const harmonic2 = freq2 * h2;
+      const ratio = harmonic1 / harmonic2;
+      // Check if harmonics are very close (within 3%)
+      if (Math.abs(ratio - 1) < 0.03) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// NMF-style iterative spectral decomposition
+function decomposeSpectrum(spectrum, binFreq, candidateNotes) {
+  const numBins = spectrum.length;
+  const residual = new Float32Array(spectrum);
+  const noteActivations = new Map();
+
+  // Normalize spectrum
+  let maxSpec = 0;
+  for (let i = 0; i < numBins; i++) {
+    maxSpec = Math.max(maxSpec, residual[i]);
+  }
+  if (maxSpec > 0) {
+    for (let i = 0; i < numBins; i++) {
+      residual[i] /= maxSpec;
+    }
+  }
+
+  // Iteratively find best matching notes (greedy approach)
+  const maxNotes = 6; // Maximum polyphony for guitar
+  const activatedNotes = [];
+
+  for (let iter = 0; iter < maxNotes; iter++) {
+    let bestNote = null;
+    let bestScore = 0.15; // Minimum threshold
+    let bestTemplate = null;
+
+    // Find the note that best explains remaining residual
+    for (const midi of candidateNotes) {
+      // Skip if already activated
+      if (noteActivations.has(midi)) continue;
+
+      const freq = midiToFreq(midi);
+      const template = generateHarmonicTemplate(freq, binFreq, numBins);
+      const score = templateMatchScore(residual, template, binFreq, freq);
+
+      // Check for harmonic collision with already detected notes
+      let hasCollision = false;
+      for (const activatedMidi of activatedNotes) {
+        if (harmonicsCollide(freq, midiToFreq(activatedMidi))) {
+          // Penalize but don't exclude - could be a chord
+          // hasCollision = true;
+        }
+      }
+
+      if (score > bestScore && !hasCollision) {
+        bestScore = score;
+        bestNote = midi;
+        bestTemplate = template;
+      }
+    }
+
+    if (bestNote === null) break;
+
+    // Activate this note
+    noteActivations.set(bestNote, bestScore);
+    activatedNotes.push(bestNote);
+
+    // Subtract this note's contribution from residual
+    const freq = midiToFreq(bestNote);
+    for (let i = 0; i < numBins; i++) {
+      residual[i] = Math.max(0, residual[i] - bestTemplate[i] * bestScore * 0.8);
+    }
+  }
+
+  return noteActivations;
+}
+
+// Score a potential chord based on music theory
+function scoreChordTheory(notes) {
+  if (notes.length < 2) return 0.5;
+
+  // Convert to pitch classes
+  const pitchClasses = notes.map(n => n % 12);
+  const uniquePitches = [...new Set(pitchClasses)];
+
+  // Check against known chord patterns
+  let bestChordScore = 0;
+  let bestChordName = '';
+
+  for (const root of uniquePitches) {
+    const intervals = uniquePitches.map(p => (p - root + 12) % 12).sort((a, b) => a - b);
+
+    for (const [chordType, pattern] of Object.entries(chordPatterns)) {
+      // Count matching intervals
+      let matches = 0;
+      for (const interval of intervals) {
+        if (pattern.includes(interval)) matches++;
+      }
+
+      const score = matches / Math.max(pattern.length, intervals.length);
+      if (score > bestChordScore) {
+        bestChordScore = score;
+        bestChordName = noteStrings[root] + (chordType === 'major' ? '' : chordType === 'minor' ? 'm' : chordType);
+      }
+    }
+  }
+
+  return { score: bestChordScore, name: bestChordName };
+}
+
+// Main DNA detection function
+function dnaDetectNotes(spectrum, binFreq, sampleRate) {
+  const now = Date.now();
+
+  // Generate candidate notes based on guitar range
+  const candidates = [];
+  for (let midi = guitarMidiRange.min; midi <= guitarMidiRange.max; midi++) {
+    candidates.push(midi);
+  }
+
+  // Decompose spectrum into note activations
+  const activations = decomposeSpectrum(spectrum, binFreq, candidates);
+
+  // Apply temporal smoothing
+  const smoothingFactor = 0.6;
+  const newActivations = new Map();
+
+  // Decay old activations
+  for (const [midi, strength] of dnaActivations) {
+    newActivations.set(midi, strength * smoothingFactor);
+  }
+
+  // Add new activations
+  for (const [midi, strength] of activations) {
+    const oldStrength = newActivations.get(midi) || 0;
+    newActivations.set(midi, Math.max(oldStrength, strength));
+  }
+
+  // Filter weak activations
+  dnaActivations.clear();
+  for (const [midi, strength] of newActivations) {
+    if (strength > 0.12) {
+      dnaActivations.set(midi, strength);
+    }
+  }
+
+  // Convert to detected notes with confidence
+  dnaDetectedNotes = [];
+  for (const [midi, strength] of dnaActivations) {
+    const freq = midiToFreq(midi);
+    const noteIndex = midi % 12;
+    const octave = Math.floor(midi / 12) - 1;
+    dnaDetectedNotes.push({
+      midi,
+      freq,
+      note: noteStrings[noteIndex],
+      octave,
+      confidence: strength,
+      fullName: noteStrings[noteIndex] + octave
+    });
+  }
+
+  // Sort by confidence
+  dnaDetectedNotes.sort((a, b) => b.confidence - a.confidence);
+
+  // Analyze chord
+  const chordAnalysis = scoreChordTheory(dnaDetectedNotes.map(n => n.midi));
+
+  // Add to history
+  dnaHistory.push({
+    time: now,
+    notes: [...dnaDetectedNotes],
+    chord: chordAnalysis
+  });
+
+  // Keep only last 2 seconds of history
+  while (dnaHistory.length > 0 && now - dnaHistory[0].time > 2000) {
+    dnaHistory.shift();
+  }
+
+  dnaLastUpdate = now;
+
+  return {
+    notes: dnaDetectedNotes,
+    chord: chordAnalysis,
+    activations: dnaActivations
+  };
+}
+
+// Get likely chord progressions based on history
+function analyzeDNAHistory() {
+  if (dnaHistory.length < 2) return null;
+
+  // Find most common chords in recent history
+  const chordCounts = new Map();
+  for (const entry of dnaHistory) {
+    if (entry.chord.name) {
+      const count = chordCounts.get(entry.chord.name) || 0;
+      chordCounts.set(entry.chord.name, count + 1);
+    }
+  }
+
+  // Sort by frequency
+  const sortedChords = [...chordCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(e => e[0]);
+
+  return sortedChords.slice(0, 4);
+}
 
 function noteFromPitch(frequency) {
   const noteNum = 12 * (Math.log(frequency / 440) / Math.log(2));
@@ -1114,34 +1428,67 @@ function detectChord(handXNorm) {
     confidence: noteConfidence
   };
 
-  // Identify chord
-  let chordName = dominantNote;
-  if (detectedNotes.length > 1 && detectedNotes.length <= 4) {
-    const intervals = [];
-    for (const note of detectedNotes) {
-      const noteIdx = noteStrings.indexOf(note);
-      const interval = (noteIdx - peakIdx + 12) % 12;
-      if (interval > 0) intervals.push(interval);
-    }
-    intervals.sort((a, b) => a - b);
+  // ============ DNA-STYLE POLYPHONIC DETECTION ============
+  // Run DNA analysis for more accurate polyphonic note detection
+  const dnaResult = dnaDetectNotes(dataArray, binFreq, audioContext.sampleRate);
 
-    // Match to chord patterns with some tolerance
-    for (const [name, pattern] of Object.entries(chordPatterns)) {
-      const patternIntervals = pattern.slice(1);
-      if (patternIntervals.length === intervals.length) {
-        let matches = true;
-        for (let i = 0; i < patternIntervals.length; i++) {
-          if (Math.abs(patternIntervals[i] - intervals[i]) > 1) {
-            matches = false;
+  // Combine DNA results with traditional detection
+  let chordName = dominantNote;
+  let finalDetectedNotes = detectedNotes;
+
+  if (dnaResult.notes.length > 0) {
+    // Use DNA results for chord identification (more accurate for polyphony)
+    const dnaChord = dnaResult.chord;
+
+    if (dnaChord.score > 0.5 && dnaChord.name) {
+      chordName = dnaChord.name;
+    }
+
+    // Merge DNA detected notes with chroma-based detection
+    const dnaNotesSet = new Set(dnaResult.notes.map(n => n.note));
+    const chromaNotesSet = new Set(detectedNotes);
+
+    // Union of both detection methods for comprehensive note list
+    finalDetectedNotes = [...new Set([...dnaNotesSet, ...chromaNotesSet])];
+
+    // Update dominant note if DNA has high confidence
+    if (dnaResult.notes.length > 0 && dnaResult.notes[0].confidence > 0.3) {
+      const dnaDominant = dnaResult.notes[0].note;
+      // Use DNA dominant if it matches chroma or chroma confidence is low
+      if (chromaNotesSet.has(dnaDominant) || noteConfidence < 0.5) {
+        dominantNote = dnaDominant;
+        detectedFrequency = dnaResult.notes[0].freq;
+      }
+    }
+  } else {
+    // Fall back to traditional chord detection
+    if (detectedNotes.length > 1 && detectedNotes.length <= 4) {
+      const intervals = [];
+      for (const note of detectedNotes) {
+        const noteIdx = noteStrings.indexOf(note);
+        const interval = (noteIdx - peakIdx + 12) % 12;
+        if (interval > 0) intervals.push(interval);
+      }
+      intervals.sort((a, b) => a - b);
+
+      // Match to chord patterns with some tolerance
+      for (const [name, pattern] of Object.entries(chordPatterns)) {
+        const patternIntervals = pattern.slice(1);
+        if (patternIntervals.length === intervals.length) {
+          let matches = true;
+          for (let i = 0; i < patternIntervals.length; i++) {
+            if (Math.abs(patternIntervals[i] - intervals[i]) > 1) {
+              matches = false;
+              break;
+            }
+          }
+          if (matches) {
+            if (name === 'major') chordName = dominantNote;
+            else if (name === 'minor') chordName = dominantNote + 'm';
+            else if (name === 'power') chordName = dominantNote + '5';
+            else chordName = dominantNote + name.replace('dom', '');
             break;
           }
-        }
-        if (matches) {
-          if (name === 'major') chordName = dominantNote;
-          else if (name === 'minor') chordName = dominantNote + 'm';
-          else if (name === 'power') chordName = dominantNote + '5';
-          else chordName = dominantNote + name.replace('dom', '');
-          break;
         }
       }
     }
@@ -1153,7 +1500,12 @@ function detectChord(handXNorm) {
     if (noteHistory.length > 20) noteHistory.shift();
   }
 
-  return { notes: detectedNotes, dominant: dominantNote, chordName };
+  return {
+    notes: finalDetectedNotes,
+    dominant: dominantNote,
+    chordName,
+    dnaResult // Include DNA result for detailed HUD display
+  };
 }
 
 // ============ FRET ESTIMATION ============
@@ -1658,25 +2010,26 @@ function drawHUDDataPanel(ctx, dpr) {
 
   ctx.save();
 
-  // Left panel - Note Analysis (uses draggable position)
+  // Left panel - Note Analysis with DNA Detection (uses draggable position)
   const panelX = hudPanels.left.x * dpr;
   const panelY = hudPanels.left.y * dpr;
-  const panelWidth = 180 * dpr;
+  const panelWidth = 200 * dpr;
+  const panelHeight = 280 * dpr;
 
   // Panel background
-  ctx.fillStyle = `rgba(0, 0, 0, ${0.4 * intensity})`;
-  ctx.fillRect(panelX - 10 * dpr, panelY - 25 * dpr, panelWidth, 200 * dpr);
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.5 * intensity})`;
+  ctx.fillRect(panelX - 10 * dpr, panelY - 25 * dpr, panelWidth, panelHeight);
 
   // Panel border
   ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.3 * intensity})`;
   ctx.lineWidth = 1 * dpr;
-  ctx.strokeRect(panelX - 10 * dpr, panelY - 25 * dpr, panelWidth, 200 * dpr);
+  ctx.strokeRect(panelX - 10 * dpr, panelY - 25 * dpr, panelWidth, panelHeight);
 
   // Title
   ctx.font = `700 ${10 * dpr}px 'Montserrat'`;
   ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.9 * intensity})`;
   ctx.textAlign = 'left';
-  ctx.fillText('AUDIO ANALYSIS', panelX, panelY - 8 * dpr);
+  ctx.fillText('DNA POLYPHONIC ANALYSIS', panelX, panelY - 8 * dpr);
 
   // Detected frequency
   ctx.font = `400 ${8 * dpr}px 'Montserrat'`;
@@ -1686,56 +2039,92 @@ function drawHUDDataPanel(ctx, dpr) {
   ctx.fillStyle = `rgba(${ar}, ${ag}, ${ab}, ${intensity})`;
   ctx.fillText(`${detectedFrequency.toFixed(1)} Hz`, panelX, panelY + 35 * dpr);
 
-  // Detected note
+  // Primary detected note
   ctx.font = `400 ${8 * dpr}px 'Montserrat'`;
   ctx.fillStyle = `rgba(255, 255, 255, ${0.6 * intensity})`;
-  ctx.fillText('NOTE', panelX, panelY + 60 * dpr);
-  ctx.font = `800 ${24 * dpr}px 'Montserrat'`;
+  ctx.fillText('PRIMARY NOTE', panelX, panelY + 55 * dpr);
+  ctx.font = `800 ${22 * dpr}px 'Montserrat'`;
   ctx.fillStyle = `rgba(255, 255, 255, ${intensity})`;
   ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.8)`;
   ctx.shadowBlur = 15 * dpr;
-  ctx.fillText(displayNote || '--', panelX, panelY + 90 * dpr);
+  ctx.fillText(displayNote || '--', panelX, panelY + 80 * dpr);
   ctx.shadowBlur = 0;
 
-  // Confidence bar
+  // DNA Detected Notes (polyphonic)
   ctx.font = `400 ${8 * dpr}px 'Montserrat'`;
   ctx.fillStyle = `rgba(255, 255, 255, ${0.6 * intensity})`;
-  ctx.fillText('CONFIDENCE', panelX, panelY + 115 * dpr);
+  ctx.fillText('DETECTED NOTES (DNA)', panelX, panelY + 105 * dpr);
 
-  const barWidth = 140 * dpr;
-  const barHeight = 8 * dpr;
-  ctx.fillStyle = `rgba(40, 40, 40, ${0.8 * intensity})`;
-  ctx.fillRect(panelX, panelY + 125 * dpr, barWidth, barHeight);
+  // Show DNA detected notes with confidence bars
+  const dnaNotesToShow = dnaDetectedNotes.slice(0, 4); // Top 4 notes
+  const noteBarWidth = 35 * dpr;
+  const noteBarHeight = 6 * dpr;
 
-  const confWidth = barWidth * noteConfidence;
-  const gradient = ctx.createLinearGradient(panelX, 0, panelX + confWidth, 0);
-  gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${intensity})`);
-  gradient.addColorStop(1, `rgba(${ar}, ${ag}, ${ab}, ${intensity})`);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(panelX, panelY + 125 * dpr, confWidth, barHeight);
+  for (let i = 0; i < dnaNotesToShow.length; i++) {
+    const note = dnaNotesToShow[i];
+    const noteY = panelY + 120 * dpr + i * 18 * dpr;
 
-  ctx.font = `600 ${8 * dpr}px 'Montserrat'`;
-  ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * intensity})`;
-  ctx.fillText(`${Math.round(noteConfidence * 100)}%`, panelX + barWidth + 5 * dpr, panelY + 132 * dpr);
+    // Note name
+    ctx.font = `700 ${11 * dpr}px 'Montserrat'`;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * intensity})`;
+    ctx.fillText(note.fullName, panelX, noteY);
+
+    // Confidence bar
+    ctx.fillStyle = `rgba(40, 40, 40, ${0.6 * intensity})`;
+    ctx.fillRect(panelX + 45 * dpr, noteY - 6 * dpr, noteBarWidth, noteBarHeight);
+
+    const noteConfBar = noteBarWidth * Math.min(1, note.confidence);
+    ctx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, ${intensity})`;
+    ctx.fillRect(panelX + 45 * dpr, noteY - 6 * dpr, noteConfBar, noteBarHeight);
+
+    // Percentage
+    ctx.font = `500 ${7 * dpr}px 'Montserrat'`;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.6 * intensity})`;
+    ctx.fillText(`${Math.round(note.confidence * 100)}%`, panelX + 85 * dpr, noteY);
+
+    // Frequency
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.6 * intensity})`;
+    ctx.fillText(`${note.freq.toFixed(0)}Hz`, panelX + 115 * dpr, noteY);
+  }
+
+  if (dnaNotesToShow.length === 0) {
+    ctx.font = `400 ${9 * dpr}px 'Montserrat'`;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * intensity})`;
+    ctx.fillText('No notes detected', panelX, panelY + 125 * dpr);
+  }
 
   // Chroma bars (mini spectrum)
+  const chromaY = panelY + 195 * dpr;
   ctx.font = `400 ${7 * dpr}px 'Montserrat'`;
   ctx.fillStyle = `rgba(255, 255, 255, ${0.5 * intensity})`;
-  ctx.fillText('CHROMA', panelX, panelY + 155 * dpr);
+  ctx.fillText('CHROMA VECTOR', panelX, chromaY);
 
-  const chromaBarWidth = 10 * dpr;
-  const chromaMaxHeight = 25 * dpr;
+  const chromaBarWidth = 12 * dpr;
+  const chromaMaxHeight = 30 * dpr;
   let chromaMax = Math.max(...chromaData, 1);
 
   for (let i = 0; i < 12; i++) {
     const barX = panelX + i * (chromaBarWidth + 2);
     const barH = (chromaData[i] / chromaMax) * chromaMaxHeight;
 
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.3 * intensity})`;
-    ctx.fillRect(barX, panelY + 165 * dpr, chromaBarWidth, chromaMaxHeight);
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.2 * intensity})`;
+    ctx.fillRect(barX, chromaY + 10 * dpr, chromaBarWidth, chromaMaxHeight);
 
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${intensity})`;
-    ctx.fillRect(barX, panelY + 165 * dpr + chromaMaxHeight - barH, chromaBarWidth, barH);
+    // Highlight if this note is in DNA detection
+    const isDetected = dnaDetectedNotes.some(n => noteStrings.indexOf(n.note) === i);
+    if (isDetected) {
+      ctx.fillStyle = `rgba(${ar}, ${ag}, ${ab}, ${intensity})`;
+    } else {
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.8 * intensity})`;
+    }
+    ctx.fillRect(barX, chromaY + 10 * dpr + chromaMaxHeight - barH, chromaBarWidth, barH);
+
+    // Note label
+    ctx.font = `500 ${5 * dpr}px 'Montserrat'`;
+    ctx.fillStyle = isDetected ? `rgba(${ar}, ${ag}, ${ab}, ${intensity})` : `rgba(255, 255, 255, ${0.5 * intensity})`;
+    ctx.textAlign = 'center';
+    ctx.fillText(noteStrings[i].replace('#', ''), barX + chromaBarWidth / 2, chromaY + chromaMaxHeight + 18 * dpr);
+    ctx.textAlign = 'left';
   }
 
   ctx.restore();
