@@ -318,6 +318,15 @@
   <div id="controls">
 
     <div class="section-header">Recording</div>
+    <div class="control-group">
+      <label>Video Quality</label>
+      <select id="recordQuality">
+        <option value="high">High (1080p, 20Mbps)</option>
+        <option value="ultra">Ultra (1080p, 35Mbps)</option>
+        <option value="medium" selected>Medium (720p, 12Mbps)</option>
+        <option value="social">Social Media (720p, 8Mbps)</option>
+      </select>
+    </div>
     <button id="btnRecord" class="btn-record">
       <span class="rec-dot"></span>
       <span id="btnRecordText">Start Recording</span>
@@ -1692,11 +1701,14 @@ function drawSpectrum(ctx, dpr) {
 // ============ NOTE TRAIL ============
 function spawnNoteTrail(note, x, y, hue) {
   const colors = getThemeColors();
+  // Random angle for direction (full 360 degrees)
+  const angle = Math.random() * Math.PI * 2;
+  const speed = 2.5 + Math.random() * 2.5;
   noteTrail.push({
     note,
     x, y,
-    vx: 3 + Math.random() * 2,
-    vy: -1 + Math.random() * 2,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
     life: 1.0,
     scale: 1.2,
     hue,
@@ -2038,11 +2050,24 @@ function toggleRecording() {
   }
 }
 
+// Quality presets for recording
+const qualityPresets = {
+  ultra: { videoBps: 35000000, audioBps: 256000, fps: 60 },
+  high: { videoBps: 20000000, audioBps: 192000, fps: 60 },
+  medium: { videoBps: 12000000, audioBps: 128000, fps: 30 },
+  social: { videoBps: 8000000, audioBps: 128000, fps: 30 }
+};
+
 function startRecording() {
   if (!globalStream) return;
 
-  // Capture at 60fps for smoother video
-  const canvasStream = canvasElement.captureStream(60);
+  const quality = document.getElementById('recordQuality').value;
+  const preset = qualityPresets[quality] || qualityPresets.high;
+
+  console.log(`Starting recording: ${quality} quality (${preset.videoBps / 1000000}Mbps, ${preset.fps}fps)`);
+
+  // Capture at selected fps
+  const canvasStream = canvasElement.captureStream(preset.fps);
   const combinedStream = new MediaStream([
     ...canvasStream.getVideoTracks(),
     ...globalStream.getAudioTracks()
@@ -2050,20 +2075,21 @@ function startRecording() {
 
   recordedChunks = [];
 
-  // Try multiple codec options for best quality
-  const codecOptions = [
-    { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 8000000 },  // 8 Mbps VP9
-    { mimeType: 'video/webm; codecs=vp8', videoBitsPerSecond: 8000000 },  // 8 Mbps VP8
-    { mimeType: 'video/webm', videoBitsPerSecond: 6000000 },              // 6 Mbps default
-    { mimeType: 'video/mp4; codecs=avc1', videoBitsPerSecond: 8000000 }, // H.264 if supported
-    {}  // Fallback to browser default
+  // Try codecs in order of preference with the selected bitrate
+  const codecs = [
+    'video/webm; codecs=vp9,opus',
+    'video/webm; codecs=vp9',
+    'video/webm; codecs=vp8,opus',
+    'video/webm; codecs=vp8',
+    'video/webm',
+    'video/mp4'
   ];
 
-  let recorderOptions = null;
-  for (const options of codecOptions) {
+  let selectedMimeType = null;
+  for (const codec of codecs) {
     try {
-      if (!options.mimeType || MediaRecorder.isTypeSupported(options.mimeType)) {
-        recorderOptions = options;
+      if (MediaRecorder.isTypeSupported(codec)) {
+        selectedMimeType = codec;
         break;
       }
     } catch (e) {
@@ -2071,9 +2097,19 @@ function startRecording() {
     }
   }
 
+  const recorderOptions = {
+    videoBitsPerSecond: preset.videoBps,
+    audioBitsPerSecond: preset.audioBps
+  };
+
+  if (selectedMimeType) {
+    recorderOptions.mimeType = selectedMimeType;
+  }
+
   try {
-    mediaRecorder = new MediaRecorder(combinedStream, recorderOptions || {});
-    console.log('Recording with:', recorderOptions);
+    mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
+    console.log('Recording with:', selectedMimeType || 'default codec',
+                `${preset.videoBps / 1000000}Mbps video, ${preset.audioBps / 1000}kbps audio`);
   } catch (e) {
     console.warn('Fallback to default recorder:', e);
     mediaRecorder = new MediaRecorder(combinedStream);
@@ -2085,8 +2121,9 @@ function startRecording() {
 
   mediaRecorder.onstop = saveRecording;
 
-  // Request data more frequently for better quality
-  mediaRecorder.start(100); // 100ms chunks
+  // Smaller chunks for ultra/high quality, larger for lower quality
+  const chunkSize = quality === 'ultra' || quality === 'high' ? 50 : 100;
+  mediaRecorder.start(chunkSize);
   btnRecord.classList.add("recording");
   btnRecordText.innerText = "Stop Recording";
 }
