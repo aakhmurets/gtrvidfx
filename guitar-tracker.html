@@ -1701,11 +1701,14 @@ function drawSpectrum(ctx, dpr) {
 // ============ NOTE TRAIL ============
 function spawnNoteTrail(note, x, y, hue) {
   const colors = getThemeColors();
+  // Random angle for direction (full 360 degrees)
+  const angle = Math.random() * Math.PI * 2;
+  const speed = 2.5 + Math.random() * 2.5;
   noteTrail.push({
     note,
     x, y,
-    vx: 3 + Math.random() * 2,
-    vy: -1 + Math.random() * 2,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
     life: 1.0,
     scale: 1.2,
     hue,
