@@ -2,11 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>3D Hand Glove Overlay</title>
+  <title>3D Hand Wireframe Overlay</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js" crossorigin="anonymous"></script>
 
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
 
@@ -46,7 +45,7 @@
     }
 
     #videoCanvas { z-index: 1; }
-    #gloveCanvas { z-index: 2; pointer-events: none; }
+    #wireframeCanvas { z-index: 2; pointer-events: none; }
 
     #info {
       position: absolute;
@@ -77,7 +76,7 @@
     }
 
     .value-display {
-      color: #fff;
+      color: #0ff;
       font-weight: 700;
     }
 
@@ -143,9 +142,9 @@
       height: 16px;
       width: 16px;
       border-radius: 50%;
-      background: #fff;
+      background: #0ff;
       cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      box-shadow: 0 2px 6px rgba(0,255,255,0.3);
     }
 
     .toggle-row {
@@ -191,7 +190,7 @@
       border-radius: 50%;
     }
 
-    input:checked + .slider { background-color: #fff; }
+    input:checked + .slider { background-color: #0ff; }
     input:checked + .slider:before {
       transform: translateX(20px);
       background-color: #000;
@@ -202,12 +201,12 @@
       bottom: 20px;
       left: 20px;
       font-size: 12px;
-      color: #fff;
+      color: #0ff;
       z-index: 10;
       background: rgba(0,0,0,0.8);
       padding: 12px 20px;
       border-radius: 25px;
-      border: 1px solid rgba(255,255,255,0.1);
+      border: 1px solid rgba(0,255,255,0.2);
     }
 
     .color-picker-row {
@@ -231,107 +230,6 @@
       border-color: #fff;
       box-shadow: 0 0 10px rgba(255,255,255,0.3);
     }
-
-    .btn {
-      width: 100%;
-      padding: 12px 20px;
-      background: linear-gradient(135deg, #333, #222);
-      color: #fff;
-      border: 1px solid #444;
-      border-radius: 10px;
-      font-family: 'Montserrat', sans-serif;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-top: 10px;
-    }
-
-    .btn:hover {
-      background: linear-gradient(135deg, #444, #333);
-      border-color: #555;
-    }
-
-    .calibration-hint {
-      font-size: 10px;
-      color: #666;
-      margin-top: 8px;
-      line-height: 1.5;
-    }
-
-    #calibrationOverlay {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: rgba(0,0,0,0.9);
-      z-index: 100;
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 40px;
-    }
-
-    #calibrationOverlay.active { display: flex; }
-    #calibrationOverlay h2 { font-size: 28px; margin-bottom: 20px; }
-    #calibrationOverlay p {
-      font-size: 16px;
-      color: #aaa;
-      max-width: 500px;
-      line-height: 1.6;
-      margin-bottom: 20px;
-    }
-
-    .calibration-progress {
-      width: 300px;
-      height: 8px;
-      background: #333;
-      border-radius: 4px;
-      overflow: hidden;
-      margin-bottom: 20px;
-    }
-
-    .calibration-progress-bar {
-      height: 100%;
-      background: linear-gradient(90deg, #3498db, #2ecc71);
-      width: 0%;
-      transition: width 0.1s;
-    }
-
-    .calibration-step {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      margin: 10px 0;
-      padding: 15px 25px;
-      background: rgba(255,255,255,0.05);
-      border-radius: 10px;
-      font-size: 14px;
-    }
-
-    .step-number {
-      width: 30px;
-      height: 30px;
-      background: #333;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-    }
-
-    .step-number.active {
-      background: #2ecc71;
-      color: #000;
-    }
-
-    .step-number.done {
-      background: #27ae60;
-      color: #fff;
-    }
   </style>
 </head>
 <body>
@@ -339,66 +237,78 @@
 <div class="container">
   <video id="input_video" playsinline></video>
   <canvas id="videoCanvas"></canvas>
-  <canvas id="gloveCanvas"></canvas>
+  <canvas id="wireframeCanvas"></canvas>
 
   <div id="info">
-    <h2>3D Glove Overlay</h2>
+    <h2>3D Hand Wireframe</h2>
     <p>Hands <span id="handCount" class="value-display">0</span></p>
     <p>FPS <span id="fps" class="value-display">0</span></p>
-    <p>Depth Range <span id="depthRange" class="value-display">--</span></p>
+    <p>Vertices <span id="vertexCount" class="value-display">0</span></p>
   </div>
 
   <div id="controls">
-    <div class="section-header">Glove Color</div>
+    <div class="section-header">Wireframe Color</div>
     <div class="control-group">
       <div class="color-picker-row">
-        <div class="color-swatch active" data-color="255,255,255" style="background: #ffffff;"></div>
-        <div class="color-swatch" data-color="30,30,30" style="background: #1e1e1e; border: 1px solid #444;"></div>
-        <div class="color-swatch" data-color="231,76,60" style="background: #e74c3c;"></div>
-        <div class="color-swatch" data-color="52,152,219" style="background: #3498db;"></div>
-        <div class="color-swatch" data-color="46,204,113" style="background: #2ecc71;"></div>
-        <div class="color-swatch" data-color="241,196,15" style="background: #f1c40f;"></div>
-        <div class="color-swatch" data-color="155,89,182" style="background: #9b59b6;"></div>
-        <div class="color-swatch" data-color="230,126,34" style="background: #e67e22;"></div>
+        <div class="color-swatch active" data-color="0,255,255" style="background: #0ff;"></div>
+        <div class="color-swatch" data-color="255,255,255" style="background: #fff;"></div>
+        <div class="color-swatch" data-color="0,255,128" style="background: #0f8;"></div>
+        <div class="color-swatch" data-color="255,0,128" style="background: #f08;"></div>
+        <div class="color-swatch" data-color="128,0,255" style="background: #80f;"></div>
+        <div class="color-swatch" data-color="255,200,0" style="background: #fc0;"></div>
+        <div class="color-swatch" data-color="255,100,50" style="background: #f64;"></div>
+        <div class="color-swatch" data-color="50,200,255" style="background: #3cf;"></div>
       </div>
     </div>
 
-    <div class="section-header">Calibration</div>
-    <button id="calibrateBtn" class="btn">Start Calibration</button>
-    <p class="calibration-hint">Calibrate skin tone and hand depth for best results</p>
-
-    <div class="section-header">Segmentation</div>
+    <div class="section-header">Mesh Density</div>
     <div class="control-group">
       <label>
-        <span>Skin Detection Range</span>
-        <span class="value-display" id="rangeValue">30</span>
+        <span>Ring Segments</span>
+        <span class="value-display" id="ringValue">8</span>
       </label>
-      <input type="range" id="skinRange" min="15" max="50" step="1" value="30">
+      <input type="range" id="ringSegments" min="4" max="16" step="1" value="8">
     </div>
 
     <div class="control-group">
       <label>
-        <span>Edge Feather</span>
-        <span class="value-display" id="featherValue">4</span>
+        <span>Length Segments</span>
+        <span class="value-display" id="lengthValue">6</span>
       </label>
-      <input type="range" id="edgeFeather" min="0" max="12" step="1" value="4">
-    </div>
-
-    <div class="section-header">3D Rendering</div>
-    <div class="control-group">
-      <label>
-        <span>Depth Intensity</span>
-        <span class="value-display" id="depthIntensityValue">1.0</span>
-      </label>
-      <input type="range" id="depthIntensity" min="0.2" max="2.0" step="0.1" value="1.0">
+      <input type="range" id="lengthSegments" min="3" max="12" step="1" value="6">
     </div>
 
     <div class="control-group">
       <label>
-        <span>Ambient Light</span>
-        <span class="value-display" id="ambientValue">0.4</span>
+        <span>Finger Width</span>
+        <span class="value-display" id="widthValue">1.0</span>
       </label>
-      <input type="range" id="ambientLight" min="0.1" max="0.8" step="0.05" value="0.4">
+      <input type="range" id="fingerWidth" min="0.5" max="2.0" step="0.1" value="1.0">
+    </div>
+
+    <div class="section-header">Rendering</div>
+    <div class="control-group">
+      <label>
+        <span>Line Opacity</span>
+        <span class="value-display" id="opacityValue">0.8</span>
+      </label>
+      <input type="range" id="lineOpacity" min="0.2" max="1.0" step="0.1" value="0.8">
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Line Width</span>
+        <span class="value-display" id="lineWidthValue">1.5</span>
+      </label>
+      <input type="range" id="lineWidth" min="0.5" max="4.0" step="0.5" value="1.5">
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Depth Effect</span>
+        <span class="value-display" id="depthValue">0.5</span>
+      </label>
+      <input type="range" id="depthEffect" min="0" max="1" step="0.1" value="0.5">
     </div>
 
     <div class="section-header">Display</div>
@@ -411,163 +321,128 @@
     </div>
 
     <div class="toggle-row">
-      <span class="toggle-text">Show Creases</span>
+      <span class="toggle-text">Show Rings</span>
       <label class="switch">
-        <input type="checkbox" id="showCreases" checked>
+        <input type="checkbox" id="showRings" checked>
         <span class="slider"></span>
       </label>
     </div>
 
     <div class="toggle-row">
-      <span class="toggle-text">Show Knuckles</span>
+      <span class="toggle-text">Show Longitudinal</span>
       <label class="switch">
-        <input type="checkbox" id="showKnuckles" checked>
+        <input type="checkbox" id="showLongitudinal" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Show Joints</span>
+      <label class="switch">
+        <input type="checkbox" id="showJoints" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Glow Effect</span>
+      <label class="switch">
+        <input type="checkbox" id="glowEffect" checked>
         <span class="slider"></span>
       </label>
     </div>
   </div>
 
   <div id="status">Initializing...</div>
-
-  <div id="calibrationOverlay">
-    <h2>Hand Calibration</h2>
-    <p id="calibrationInstructions">Hold your hand open, palm facing the camera</p>
-    <div class="calibration-progress">
-      <div class="calibration-progress-bar" id="calibrationBar"></div>
-    </div>
-    <div class="calibration-step">
-      <div class="step-number" id="step1">1</div>
-      <span>Skin tone sampling</span>
-    </div>
-    <div class="calibration-step">
-      <div class="step-number" id="step2">2</div>
-      <span>Depth range calibration</span>
-    </div>
-    <div class="calibration-step">
-      <div class="step-number" id="step3">3</div>
-      <span>Hand size estimation</span>
-    </div>
-    <p id="calibrationStatus">Waiting to start...</p>
-  </div>
 </div>
 
 <script>
-console.log(">>> 3D Hand Glove Overlay - Combined Segmentation + Landmarks");
+console.log(">>> 3D Hand Wireframe Overlay");
 
 // DOM Elements
 const videoElement = document.getElementById('input_video');
 const videoCanvas = document.getElementById('videoCanvas');
-const videoCtx = videoCanvas.getContext('2d', { willReadFrequently: true });
-const gloveCanvas = document.getElementById('gloveCanvas');
-const gloveCtx = gloveCanvas.getContext('2d');
+const videoCtx = videoCanvas.getContext('2d');
+const wireframeCanvas = document.getElementById('wireframeCanvas');
+const ctx = wireframeCanvas.getContext('2d');
 const statusDiv = document.getElementById('status');
 const handCountSpan = document.getElementById('handCount');
 const fpsSpan = document.getElementById('fps');
-const depthRangeSpan = document.getElementById('depthRange');
-
-// Calibration elements
-const calibrationOverlay = document.getElementById('calibrationOverlay');
-const calibrationBar = document.getElementById('calibrationBar');
-const calibrationInstructions = document.getElementById('calibrationInstructions');
-const calibrationStatus = document.getElementById('calibrationStatus');
-const step1El = document.getElementById('step1');
-const step2El = document.getElementById('step2');
-const step3El = document.getElementById('step3');
+const vertexCountSpan = document.getElementById('vertexCount');
 
 // Configuration
 let config = {
-  gloveColor: [255, 255, 255],
-  skinRange: 30,
-  edgeFeather: 4,
-  depthIntensity: 1.0,
-  ambientLight: 0.4,
+  wireColor: [0, 255, 255],
+  ringSegments: 8,
+  lengthSegments: 6,
+  fingerWidth: 1.0,
+  lineOpacity: 0.8,
+  lineWidth: 1.5,
+  depthEffect: 0.5,
   showVideo: true,
-  showCreases: true,
-  showKnuckles: true
+  showRings: true,
+  showLongitudinal: true,
+  showJoints: true,
+  glowEffect: true
 };
 
-// Calibration data
-let calibration = {
-  skinCrCenter: 150,
-  skinCbCenter: 110,
-  depthMin: -0.15,
-  depthMax: 0.05,
-  handScale: 1.0,
-  isCalibrated: false
-};
-
-// Skin detection params (YCrCb)
-let skinParams = {
-  yMin: 50, yMax: 255,
-  crMin: 130, crMax: 175,
-  cbMin: 85, cbMax: 135
-};
-
-// State
+// FPS tracking
 let frameCount = 0;
 let lastTime = performance.now();
-let isCalibrating = false;
-let calibrationStep = 0;
-let calibrationFrames = 0;
-let calibrationData = { skin: [], depth: [], scale: [] };
-
-// Processing canvas
-const processCanvas = document.createElement('canvas');
-const processCtx = processCanvas.getContext('2d', { willReadFrequently: true });
-const PROCESS_SCALE = 0.4;
-
-// Current frame data
-let currentLandmarks = null;
-let currentHandedness = null;
 
 // Landmark indices
 const WRIST = 0;
-const THUMB_CMC = 1, THUMB_MCP = 2, THUMB_IP = 3, THUMB_TIP = 4;
-const INDEX_MCP = 5, INDEX_PIP = 6, INDEX_DIP = 7, INDEX_TIP = 8;
-const MIDDLE_MCP = 9, MIDDLE_PIP = 10, MIDDLE_DIP = 11, MIDDLE_TIP = 12;
-const RING_MCP = 13, RING_PIP = 14, RING_DIP = 15, RING_TIP = 16;
-const PINKY_MCP = 17, PINKY_PIP = 18, PINKY_DIP = 19, PINKY_TIP = 20;
-
-// Finger segments for crease rendering
-const FINGER_JOINTS = [
-  [INDEX_PIP, INDEX_DIP],
-  [MIDDLE_PIP, MIDDLE_DIP],
-  [RING_PIP, RING_DIP],
-  [PINKY_PIP, PINKY_DIP],
-  [THUMB_MCP, THUMB_IP]
+const FINGERS = [
+  { name: 'thumb', indices: [1, 2, 3, 4], widthMult: 1.3 },
+  { name: 'index', indices: [5, 6, 7, 8], widthMult: 1.0 },
+  { name: 'middle', indices: [9, 10, 11, 12], widthMult: 1.05 },
+  { name: 'ring', indices: [13, 14, 15, 16], widthMult: 0.95 },
+  { name: 'pinky', indices: [17, 18, 19, 20], widthMult: 0.8 }
 ];
 
-// Knuckle positions
-const KNUCKLES = [INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP];
+// Palm connections
+const PALM_CONNECTIONS = [
+  [0, 1], [0, 5], [0, 9], [0, 13], [0, 17],
+  [1, 5], [5, 9], [9, 13], [13, 17]
+];
 
 // UI Event Handlers
 document.querySelectorAll('.color-swatch').forEach(swatch => {
   swatch.addEventListener('click', () => {
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
     swatch.classList.add('active');
-    config.gloveColor = swatch.dataset.color.split(',').map(Number);
+    config.wireColor = swatch.dataset.color.split(',').map(Number);
   });
 });
 
-document.getElementById('skinRange').oninput = (e) => {
-  config.skinRange = parseInt(e.target.value);
-  document.getElementById('rangeValue').innerText = config.skinRange;
-  updateSkinParams();
+document.getElementById('ringSegments').oninput = (e) => {
+  config.ringSegments = parseInt(e.target.value);
+  document.getElementById('ringValue').innerText = config.ringSegments;
 };
 
-document.getElementById('edgeFeather').oninput = (e) => {
-  config.edgeFeather = parseInt(e.target.value);
-  document.getElementById('featherValue').innerText = config.edgeFeather;
+document.getElementById('lengthSegments').oninput = (e) => {
+  config.lengthSegments = parseInt(e.target.value);
+  document.getElementById('lengthValue').innerText = config.lengthSegments;
 };
 
-document.getElementById('depthIntensity').oninput = (e) => {
-  config.depthIntensity = parseFloat(e.target.value);
-  document.getElementById('depthIntensityValue').innerText = config.depthIntensity.toFixed(1);
+document.getElementById('fingerWidth').oninput = (e) => {
+  config.fingerWidth = parseFloat(e.target.value);
+  document.getElementById('widthValue').innerText = config.fingerWidth.toFixed(1);
 };
 
-document.getElementById('ambientLight').oninput = (e) => {
-  config.ambientLight = parseFloat(e.target.value);
-  document.getElementById('ambientValue').innerText = config.ambientLight.toFixed(2);
+document.getElementById('lineOpacity').oninput = (e) => {
+  config.lineOpacity = parseFloat(e.target.value);
+  document.getElementById('opacityValue').innerText = config.lineOpacity.toFixed(1);
+};
+
+document.getElementById('lineWidth').oninput = (e) => {
+  config.lineWidth = parseFloat(e.target.value);
+  document.getElementById('lineWidthValue').innerText = config.lineWidth.toFixed(1);
+};
+
+document.getElementById('depthEffect').oninput = (e) => {
+  config.depthEffect = parseFloat(e.target.value);
+  document.getElementById('depthValue').innerText = config.depthEffect.toFixed(1);
 };
 
 document.getElementById('showVideo').onchange = (e) => {
@@ -575,606 +450,277 @@ document.getElementById('showVideo').onchange = (e) => {
   videoCanvas.style.opacity = config.showVideo ? 1 : 0;
 };
 
-document.getElementById('showCreases').onchange = (e) => config.showCreases = e.target.checked;
-document.getElementById('showKnuckles').onchange = (e) => config.showKnuckles = e.target.checked;
+document.getElementById('showRings').onchange = (e) => config.showRings = e.target.checked;
+document.getElementById('showLongitudinal').onchange = (e) => config.showLongitudinal = e.target.checked;
+document.getElementById('showJoints').onchange = (e) => config.showJoints = e.target.checked;
+document.getElementById('glowEffect').onchange = (e) => config.glowEffect = e.target.checked;
 
-document.getElementById('calibrateBtn').addEventListener('click', startCalibration);
-
-// Update skin params from calibration
-function updateSkinParams() {
-  const range = config.skinRange;
-  skinParams.crMin = Math.max(100, calibration.skinCrCenter - range);
-  skinParams.crMax = Math.min(200, calibration.skinCrCenter + range);
-  skinParams.cbMin = Math.max(70, calibration.skinCbCenter - range);
-  skinParams.cbMax = Math.min(150, calibration.skinCbCenter + range);
-}
-
-// Calibration functions
-function startCalibration() {
-  if (!currentLandmarks) {
-    alert('Please show your hand to the camera first!');
-    return;
-  }
-
-  isCalibrating = true;
-  calibrationStep = 1;
-  calibrationFrames = 0;
-  calibrationData = { skin: [], depth: [], scale: [] };
-
-  calibrationOverlay.classList.add('active');
-  calibrationBar.style.width = '0%';
-  step1El.className = 'step-number active';
-  step2El.className = 'step-number';
-  step3El.className = 'step-number';
-
-  calibrationInstructions.innerText = 'Hold your hand open, palm facing camera';
-  calibrationStatus.innerText = 'Sampling skin tone...';
-}
-
-function processCalibrationFrame(imageData, landmarks, width, height) {
-  if (!isCalibrating) return;
-
-  const totalSteps = 90; // 30 frames per step
-  const progress = (calibrationFrames / totalSteps) * 100;
-  calibrationBar.style.width = progress + '%';
-
-  if (calibrationStep === 1) {
-    // Skin tone sampling
-    const samples = sampleSkinTone(imageData, landmarks, width, height);
-    calibrationData.skin.push(...samples);
-
-    if (calibrationFrames >= 30) {
-      finishSkinCalibration();
-      calibrationStep = 2;
-      step1El.className = 'step-number done';
-      step2El.className = 'step-number active';
-      calibrationInstructions.innerText = 'Move your hand closer and further from camera';
-      calibrationStatus.innerText = 'Calibrating depth range...';
-    }
-  } else if (calibrationStep === 2) {
-    // Depth calibration
-    const depthValues = landmarks.map(l => l.z);
-    calibrationData.depth.push(...depthValues);
-
-    if (calibrationFrames >= 60) {
-      finishDepthCalibration();
-      calibrationStep = 3;
-      step2El.className = 'step-number done';
-      step3El.className = 'step-number active';
-      calibrationInstructions.innerText = 'Hold hand steady for size estimation';
-      calibrationStatus.innerText = 'Estimating hand size...';
-    }
-  } else if (calibrationStep === 3) {
-    // Hand size estimation
-    const wrist = landmarks[WRIST];
-    const middleTip = landmarks[MIDDLE_TIP];
-    const handLength = Math.sqrt(
-      Math.pow((middleTip.x - wrist.x) * width, 2) +
-      Math.pow((middleTip.y - wrist.y) * height, 2)
-    );
-    calibrationData.scale.push(handLength);
-
-    if (calibrationFrames >= 90) {
-      finishScaleCalibration();
-      finishCalibration();
-    }
-  }
-
-  calibrationFrames++;
-}
-
-function sampleSkinTone(imageData, landmarks, width, height) {
-  const samples = [];
-  const data = imageData.data;
-  const iw = imageData.width;
-
-  // Sample around palm center
-  const palmPoints = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP];
-  let cx = 0, cy = 0;
-  for (const idx of palmPoints) {
-    cx += (1 - landmarks[idx].x) * width * PROCESS_SCALE;
-    cy += landmarks[idx].y * height * PROCESS_SCALE;
-  }
-  cx /= palmPoints.length;
-  cy /= palmPoints.length;
-
-  const radius = 20;
-  for (let dy = -radius; dy <= radius; dy += 2) {
-    for (let dx = -radius; dx <= radius; dx += 2) {
-      const x = Math.round(cx + dx);
-      const y = Math.round(cy + dy);
-      if (x >= 0 && x < iw && y >= 0 && y < imageData.height) {
-        const idx = (y * iw + x) * 4;
-        const r = data[idx], g = data[idx + 1], b = data[idx + 2];
-        const ycrcb = rgbToYCrCb(r, g, b);
-        if (ycrcb.y > 50) { // Not too dark
-          samples.push(ycrcb);
-        }
-      }
-    }
-  }
-
-  return samples;
-}
-
-function finishSkinCalibration() {
-  if (calibrationData.skin.length < 50) return;
-
-  const crValues = calibrationData.skin.map(s => s.cr).sort((a, b) => a - b);
-  const cbValues = calibrationData.skin.map(s => s.cb).sort((a, b) => a - b);
-
-  calibration.skinCrCenter = crValues[Math.floor(crValues.length / 2)];
-  calibration.skinCbCenter = cbValues[Math.floor(cbValues.length / 2)];
-
-  updateSkinParams();
-}
-
-function finishDepthCalibration() {
-  if (calibrationData.depth.length < 100) return;
-
-  const sorted = calibrationData.depth.sort((a, b) => a - b);
-  calibration.depthMin = sorted[Math.floor(sorted.length * 0.05)];
-  calibration.depthMax = sorted[Math.floor(sorted.length * 0.95)];
-}
-
-function finishScaleCalibration() {
-  if (calibrationData.scale.length < 10) return;
-
-  const sorted = calibrationData.scale.sort((a, b) => a - b);
-  const medianLength = sorted[Math.floor(sorted.length / 2)];
-  calibration.handScale = medianLength / 200; // Normalize to expected ~200px hand
-}
-
-function finishCalibration() {
-  isCalibrating = false;
-  calibration.isCalibrated = true;
-
-  step3El.className = 'step-number done';
-  calibrationStatus.innerText = 'Calibration complete!';
-
-  setTimeout(() => {
-    calibrationOverlay.classList.remove('active');
-    statusDiv.innerText = 'Calibrated! 3D glove tracking active.';
-  }, 800);
-}
-
-// Color conversion
-function rgbToYCrCb(r, g, b) {
-  const y = 0.299 * r + 0.587 * g + 0.114 * b;
-  const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-  const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-  return { y, cr, cb };
-}
-
-function isSkinPixel(r, g, b) {
-  const { y, cr, cb } = rgbToYCrCb(r, g, b);
-  return y >= skinParams.yMin && y <= skinParams.yMax &&
-         cr >= skinParams.crMin && cr <= skinParams.crMax &&
-         cb >= skinParams.cbMin && cb <= skinParams.cbMax;
-}
-
-// Get hand bounding box
-function getHandBounds(landmarks, width, height, padding = 0.2) {
-  let minX = Infinity, maxX = -Infinity;
-  let minY = Infinity, maxY = -Infinity;
-
-  for (const lm of landmarks) {
-    const x = (1 - lm.x) * width;
-    const y = lm.y * height;
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-    minY = Math.min(minY, y);
-    maxY = Math.max(maxY, y);
-  }
-
-  const padX = (maxX - minX) * padding;
-  const padY = (maxY - minY) * padding;
-
+// Convert landmark to screen coordinates
+function landmarkToScreen(lm, w, h) {
   return {
-    minX: Math.max(0, minX - padX),
-    maxX: Math.min(width, maxX + padX),
-    minY: Math.max(0, minY - padY),
-    maxY: Math.min(height, maxY + padY),
-    width: maxX - minX + padX * 2,
-    height: maxY - minY + padY * 2
+    x: (1 - lm.x) * w,
+    y: lm.y * h,
+    z: lm.z
   };
 }
 
-// Create skin segmentation mask
-function createSkinMask(imageData, landmarks, bounds, width, height) {
-  const data = imageData.data;
-  const mw = imageData.width;
-  const mh = imageData.height;
-  const mask = new Uint8Array(mw * mh);
+// Interpolate between two points
+function lerp(a, b, t) {
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+    z: a.z + (b.z - a.z) * t
+  };
+}
 
-  // Convert landmarks to process scale
-  const scaledLandmarks = landmarks.map(lm => ({
-    x: (1 - lm.x) * width * PROCESS_SCALE,
-    y: lm.y * height * PROCESS_SCALE,
-    z: lm.z
-  }));
+// Get perpendicular vectors for creating tube geometry
+function getPerpendicularBasis(p1, p2) {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
 
-  // Process bounds
-  const startX = Math.max(0, Math.floor(bounds.minX * PROCESS_SCALE));
-  const endX = Math.min(mw, Math.ceil(bounds.maxX * PROCESS_SCALE));
-  const startY = Math.max(0, Math.floor(bounds.minY * PROCESS_SCALE));
-  const endY = Math.min(mh, Math.ceil(bounds.maxY * PROCESS_SCALE));
+  // Perpendicular in 2D
+  return {
+    px: -dy / len,
+    py: dx / len
+  };
+}
 
-  // First pass: skin detection
-  for (let y = startY; y < endY; y++) {
-    for (let x = startX; x < endX; x++) {
-      const idx = (y * mw + x) * 4;
-      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+// Calculate depth-based opacity and width
+function getDepthModifiers(z, minZ, maxZ) {
+  const range = maxZ - minZ || 0.1;
+  const normalized = (z - minZ) / range;
 
-      if (isSkinPixel(r, g, b)) {
-        // Check proximity to any landmark
-        let minDist = Infinity;
-        for (const lm of scaledLandmarks) {
-          const dist = Math.sqrt(Math.pow(x - lm.x, 2) + Math.pow(y - lm.y, 2));
-          minDist = Math.min(minDist, dist);
+  // Closer = brighter and thicker
+  const opacity = 0.5 + (1 - normalized) * 0.5;
+  const width = 0.7 + (1 - normalized) * 0.6;
+
+  return { opacity, width };
+}
+
+// Generate finger tube mesh
+function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, maxZ) {
+  const points = fingerIndices.map(i => landmarkToScreen(landmarks[i], w, h));
+  const mesh = { rings: [], longitudinals: [] };
+
+  // Generate ring segments along the finger
+  const numRings = config.lengthSegments;
+  const numPoints = config.ringSegments;
+
+  for (let r = 0; r <= numRings; r++) {
+    const t = r / numRings;
+    const segmentIndex = Math.min(Math.floor(t * (points.length - 1)), points.length - 2);
+    const localT = (t * (points.length - 1)) - segmentIndex;
+
+    const p1 = points[segmentIndex];
+    const p2 = points[segmentIndex + 1];
+    const center = lerp(p1, p2, localT);
+
+    // Taper toward tip
+    const taper = 1 - t * 0.4;
+    const radius = baseWidth * taper * config.fingerWidth;
+
+    // Get perpendicular direction
+    const { px, py } = getPerpendicularBasis(p1, p2);
+
+    // Generate ring points
+    const ring = [];
+    for (let i = 0; i < numPoints; i++) {
+      const angle = (i / numPoints) * Math.PI * 2;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+
+      // Elliptical cross-section (flatter)
+      const rx = radius * 1.0;
+      const ry = radius * 0.7;
+
+      ring.push({
+        x: center.x + px * cos * rx + py * sin * ry * 0.3,
+        y: center.y + py * cos * rx + px * sin * ry * 0.3,
+        z: center.z + sin * 0.01 // Slight depth variation
+      });
+    }
+
+    mesh.rings.push(ring);
+  }
+
+  // Generate longitudinal lines
+  for (let i = 0; i < numPoints; i++) {
+    const line = [];
+    for (let r = 0; r <= numRings; r++) {
+      line.push(mesh.rings[r][i]);
+    }
+    mesh.longitudinals.push(line);
+  }
+
+  return mesh;
+}
+
+// Generate palm mesh
+function generatePalmMesh(landmarks, w, h) {
+  const palmIndices = [0, 1, 5, 9, 13, 17];
+  const points = palmIndices.map(i => landmarkToScreen(landmarks[i], w, h));
+
+  // Create grid on palm
+  const mesh = { lines: [] };
+
+  // Radial lines from wrist
+  const wrist = points[0];
+  for (let i = 1; i < points.length; i++) {
+    mesh.lines.push([wrist, points[i]]);
+  }
+
+  // Cross lines between finger bases
+  for (let i = 1; i < points.length - 1; i++) {
+    mesh.lines.push([points[i], points[i + 1]]);
+  }
+
+  // Additional palm grid
+  const center = {
+    x: points.reduce((s, p) => s + p.x, 0) / points.length,
+    y: points.reduce((s, p) => s + p.y, 0) / points.length,
+    z: points.reduce((s, p) => s + p.z, 0) / points.length
+  };
+
+  for (let i = 1; i < points.length; i++) {
+    mesh.lines.push([center, lerp(points[i], points[(i % (points.length - 1)) + 1], 0.5)]);
+  }
+
+  return mesh;
+}
+
+// Draw a line with depth-based styling
+function drawLine(p1, p2, minZ, maxZ) {
+  const avgZ = (p1.z + p2.z) / 2;
+  const { opacity, width } = getDepthModifiers(avgZ, minZ, maxZ);
+
+  const finalOpacity = config.lineOpacity * (config.depthEffect > 0 ?
+    (1 - config.depthEffect) + config.depthEffect * opacity : 1);
+  const finalWidth = config.lineWidth * (config.depthEffect > 0 ?
+    (1 - config.depthEffect) + config.depthEffect * width : 1);
+
+  const [r, g, b] = config.wireColor;
+
+  // Glow effect
+  if (config.glowEffect) {
+    ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${finalOpacity * 0.3})`;
+    ctx.lineWidth = finalWidth * 3;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+
+  // Main line
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${finalOpacity})`;
+  ctx.lineWidth = finalWidth;
+  ctx.beginPath();
+  ctx.moveTo(p1.x, p1.y);
+  ctx.lineTo(p2.x, p2.y);
+  ctx.stroke();
+}
+
+// Draw joint marker
+function drawJoint(point, minZ, maxZ) {
+  const { opacity, width } = getDepthModifiers(point.z, minZ, maxZ);
+  const [r, g, b] = config.wireColor;
+  const size = 4 * width * config.fingerWidth;
+
+  // Glow
+  if (config.glowEffect) {
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, size * 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Joint dot
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity * config.lineOpacity})`;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Inner highlight
+  ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.5})`;
+  ctx.beginPath();
+  ctx.arc(point.x - size * 0.2, point.y - size * 0.2, size * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Draw complete hand wireframe
+function drawHandWireframe(landmarks, w, h) {
+  // Calculate depth range
+  const zValues = landmarks.map(l => l.z);
+  const minZ = Math.min(...zValues);
+  const maxZ = Math.max(...zValues);
+
+  // Estimate base finger width from hand size
+  const wrist = landmarkToScreen(landmarks[0], w, h);
+  const middle = landmarkToScreen(landmarks[9], w, h);
+  const handSize = Math.sqrt(Math.pow(middle.x - wrist.x, 2) + Math.pow(middle.y - wrist.y, 2));
+  const baseWidth = handSize * 0.08;
+
+  let totalVertices = 0;
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Draw palm mesh
+  const palmMesh = generatePalmMesh(landmarks, w, h);
+  for (const line of palmMesh.lines) {
+    drawLine(line[0], line[1], minZ, maxZ);
+    totalVertices += 2;
+  }
+
+  // Draw each finger
+  for (const finger of FINGERS) {
+    const mesh = generateFingerMesh(
+      landmarks,
+      finger.indices,
+      baseWidth * finger.widthMult,
+      w, h, minZ, maxZ
+    );
+
+    // Draw ring segments
+    if (config.showRings) {
+      for (const ring of mesh.rings) {
+        for (let i = 0; i < ring.length; i++) {
+          const next = (i + 1) % ring.length;
+          drawLine(ring[i], ring[next], minZ, maxZ);
+          totalVertices++;
         }
+      }
+    }
 
-        if (minDist < bounds.width * PROCESS_SCALE * 0.5) {
-          mask[y * mw + x] = 255;
+    // Draw longitudinal lines
+    if (config.showLongitudinal) {
+      for (const line of mesh.longitudinals) {
+        for (let i = 0; i < line.length - 1; i++) {
+          drawLine(line[i], line[i + 1], minZ, maxZ);
+          totalVertices++;
         }
       }
     }
   }
 
-  // Morphological operations
-  let processed = morphClose(mask, mw, mh, 3);
-  processed = fillWithHull(processed, mw, mh, scaledLandmarks);
-  processed = dilate(processed, mw, mh, Math.ceil(config.edgeFeather / 2));
-
-  return processed;
-}
-
-// Morphological close
-function morphClose(mask, w, h, r) {
-  return erode(dilate(mask, w, h, r), w, h, r);
-}
-
-function dilate(mask, w, h, r) {
-  const result = new Uint8Array(mask.length);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let max = 0;
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const nx = x + dx, ny = y + dy;
-          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-            if (dx*dx + dy*dy <= r*r) {
-              max = Math.max(max, mask[ny * w + nx]);
-            }
-          }
-        }
-      }
-      result[y * w + x] = max;
-    }
-  }
-  return result;
-}
-
-function erode(mask, w, h, r) {
-  const result = new Uint8Array(mask.length);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let min = 255;
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const nx = x + dx, ny = y + dy;
-          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-            if (dx*dx + dy*dy <= r*r) {
-              min = Math.min(min, mask[ny * w + nx]);
-            }
-          }
-        }
-      }
-      result[y * w + x] = min;
-    }
-  }
-  return result;
-}
-
-// Fill using convex hull of landmarks
-function fillWithHull(mask, w, h, landmarks) {
-  const result = new Uint8Array(mask);
-  const hull = convexHull(landmarks);
-
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (pointInPolygon(x, y, hull)) {
-        // Check if surrounded by skin
-        let skinCount = 0;
-        const checkR = 6;
-        for (let i = 0; i < 8; i++) {
-          const angle = i * Math.PI / 4;
-          const cx = Math.round(x + Math.cos(angle) * checkR);
-          const cy = Math.round(y + Math.sin(angle) * checkR);
-          if (cx >= 0 && cx < w && cy >= 0 && cy < h && mask[cy * w + cx] > 0) {
-            skinCount++;
-          }
-        }
-        if (skinCount >= 3) {
-          result[y * w + x] = 255;
-        }
-      }
-    }
-  }
-  return result;
-}
-
-function convexHull(points) {
-  if (points.length < 3) return points;
-  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
-
-  const lower = [];
-  for (const p of sorted) {
-    while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
-    lower.push(p);
-  }
-
-  const upper = [];
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    const p = sorted[i];
-    while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
-    upper.push(p);
-  }
-
-  lower.pop();
-  upper.pop();
-  return lower.concat(upper);
-}
-
-function cross(o, a, b) {
-  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-}
-
-function pointInPolygon(x, y, polygon) {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].x, yi = polygon[i].y;
-    const xj = polygon[j].x, yj = polygon[j].y;
-    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-// Gaussian blur for feathering
-function blurMask(mask, w, h, radius) {
-  if (radius <= 0) return mask;
-
-  const kernel = [];
-  const sigma = radius / 2;
-  let sum = 0;
-  for (let i = -radius; i <= radius; i++) {
-    const v = Math.exp(-(i*i) / (2*sigma*sigma));
-    kernel.push(v);
-    sum += v;
-  }
-  for (let i = 0; i < kernel.length; i++) kernel[i] /= sum;
-
-  // Horizontal
-  const temp = new Float32Array(mask.length);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let v = 0;
-      for (let i = -radius; i <= radius; i++) {
-        const nx = Math.min(Math.max(x + i, 0), w - 1);
-        v += mask[y * w + nx] * kernel[i + radius];
-      }
-      temp[y * w + x] = v;
+  // Draw joints
+  if (config.showJoints) {
+    for (let i = 0; i < landmarks.length; i++) {
+      const point = landmarkToScreen(landmarks[i], w, h);
+      drawJoint(point, minZ, maxZ);
+      totalVertices++;
     }
   }
 
-  // Vertical
-  const result = new Uint8Array(mask.length);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let v = 0;
-      for (let i = -radius; i <= radius; i++) {
-        const ny = Math.min(Math.max(y + i, 0), h - 1);
-        v += temp[ny * w + x] * kernel[i + radius];
-      }
-      result[y * w + x] = Math.round(v);
-    }
-  }
-  return result;
-}
-
-// Build depth map from landmarks
-function buildDepthMap(landmarks, width, height, mw, mh) {
-  const depthMap = new Float32Array(mw * mh);
-
-  // Convert landmarks to scaled positions with depth
-  const points = landmarks.map(lm => ({
-    x: (1 - lm.x) * width * PROCESS_SCALE,
-    y: lm.y * height * PROCESS_SCALE,
-    z: lm.z
-  }));
-
-  // Interpolate depth across the hand region
-  for (let y = 0; y < mh; y++) {
-    for (let x = 0; x < mw; x++) {
-      let totalWeight = 0;
-      let weightedDepth = 0;
-
-      for (const p of points) {
-        const dist = Math.sqrt(Math.pow(x - p.x, 2) + Math.pow(y - p.y, 2));
-        if (dist < 1) {
-          depthMap[y * mw + x] = p.z;
-          totalWeight = 1;
-          weightedDepth = p.z;
-          break;
-        }
-        const weight = 1 / (dist * dist + 1);
-        totalWeight += weight;
-        weightedDepth += p.z * weight;
-      }
-
-      if (totalWeight > 0) {
-        depthMap[y * mw + x] = weightedDepth / totalWeight;
-      }
-    }
+  // Draw connections between fingers and palm
+  const fingerBases = [1, 5, 9, 13, 17];
+  for (const baseIdx of fingerBases) {
+    const base = landmarkToScreen(landmarks[baseIdx], w, h);
+    drawLine(wrist, base, minZ, maxZ);
+    totalVertices += 2;
   }
 
-  return depthMap;
-}
-
-// Compute normals from depth map for shading
-function computeNormals(depthMap, w, h) {
-  const normals = new Float32Array(w * h * 3);
-
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const idx = y * w + x;
-
-      // Compute gradient
-      const dzdx = (depthMap[idx + 1] - depthMap[idx - 1]) / 2;
-      const dzdy = (depthMap[idx + w] - depthMap[idx - w]) / 2;
-
-      // Normal vector
-      const scale = config.depthIntensity * 50;
-      let nx = -dzdx * scale;
-      let ny = -dzdy * scale;
-      let nz = 1;
-
-      // Normalize
-      const len = Math.sqrt(nx*nx + ny*ny + nz*nz);
-      normals[idx * 3] = nx / len;
-      normals[idx * 3 + 1] = ny / len;
-      normals[idx * 3 + 2] = nz / len;
-    }
-  }
-
-  return normals;
-}
-
-// Render the 3D glove
-function renderGlove(mask, depthMap, normals, landmarks, mw, mh, canvasW, canvasH, bounds) {
-  gloveCtx.clearRect(0, 0, canvasW, canvasH);
-
-  // Apply feathering
-  const feathered = blurMask(mask, mw, mh, config.edgeFeather);
-
-  // Create output image
-  const imageData = gloveCtx.createImageData(canvasW, canvasH);
-  const data = imageData.data;
-
-  const [baseR, baseG, baseB] = config.gloveColor;
-  const scaleX = canvasW / mw;
-  const scaleY = canvasH / mh;
-
-  // Light direction (from top-left-front)
-  const lightDir = { x: -0.3, y: -0.5, z: 0.8 };
-  const lightLen = Math.sqrt(lightDir.x**2 + lightDir.y**2 + lightDir.z**2);
-  lightDir.x /= lightLen;
-  lightDir.y /= lightLen;
-  lightDir.z /= lightLen;
-
-  // Depth range for visualization
-  const depthRange = calibration.depthMax - calibration.depthMin;
-
-  for (let y = 0; y < canvasH; y++) {
-    const my = Math.floor(y / scaleY);
-
-    for (let x = 0; x < canvasW; x++) {
-      const mx = Math.floor(x / scaleX);
-      const mIdx = my * mw + mx;
-      const alpha = feathered[mIdx];
-
-      if (alpha > 0) {
-        const idx = (y * canvasW + x) * 4;
-
-        // Get normal for this pixel
-        const nx = normals[mIdx * 3] || 0;
-        const ny = normals[mIdx * 3 + 1] || 0;
-        const nz = normals[mIdx * 3 + 2] || 1;
-
-        // Compute diffuse lighting
-        const diffuse = Math.max(0, nx * lightDir.x + ny * lightDir.y + nz * lightDir.z);
-
-        // Combine ambient and diffuse
-        const lighting = config.ambientLight + (1 - config.ambientLight) * diffuse;
-
-        // Apply depth-based shading
-        const depth = depthMap[mIdx];
-        const normalizedDepth = (depth - calibration.depthMin) / (depthRange || 0.1);
-        const depthShade = 0.85 + normalizedDepth * 0.15;
-
-        // Final color
-        const shade = lighting * depthShade;
-        data[idx] = Math.min(255, Math.round(baseR * shade));
-        data[idx + 1] = Math.min(255, Math.round(baseG * shade));
-        data[idx + 2] = Math.min(255, Math.round(baseB * shade));
-        data[idx + 3] = alpha;
-      }
-    }
-  }
-
-  gloveCtx.putImageData(imageData, 0, 0);
-
-  // Draw creases at finger joints
-  if (config.showCreases) {
-    drawCreases(landmarks, canvasW, canvasH);
-  }
-
-  // Draw knuckle highlights
-  if (config.showKnuckles) {
-    drawKnuckles(landmarks, canvasW, canvasH);
-  }
-}
-
-// Draw finger creases
-function drawCreases(landmarks, w, h) {
-  const rgb = config.gloveColor;
-  gloveCtx.strokeStyle = `rgba(${Math.max(0, rgb[0]-80)}, ${Math.max(0, rgb[1]-80)}, ${Math.max(0, rgb[2]-80)}, 0.5)`;
-  gloveCtx.lineWidth = 2;
-  gloveCtx.lineCap = 'round';
-
-  for (const [idx1, idx2] of FINGER_JOINTS) {
-    const p1 = landmarks[idx1];
-    const p2 = landmarks[idx2];
-
-    // Position crease at the joint
-    const x = (1 - p1.x) * w;
-    const y = p1.y * h;
-
-    // Direction perpendicular to finger
-    const dx = (1 - p2.x) * w - x;
-    const dy = p2.y * h - y;
-    const len = Math.sqrt(dx*dx + dy*dy);
-    const perpX = -dy / len * 12;
-    const perpY = dx / len * 12;
-
-    gloveCtx.beginPath();
-    gloveCtx.moveTo(x + perpX, y + perpY);
-    gloveCtx.lineTo(x - perpX, y - perpY);
-    gloveCtx.stroke();
-  }
-}
-
-// Draw knuckle bumps
-function drawKnuckles(landmarks, w, h) {
-  const rgb = config.gloveColor;
-
-  for (const idx of KNUCKLES) {
-    const lm = landmarks[idx];
-    const x = (1 - lm.x) * w;
-    const y = lm.y * h;
-
-    // Highlight
-    const gradient = gloveCtx.createRadialGradient(x, y - 3, 0, x, y, 12);
-    gradient.addColorStop(0, `rgba(${Math.min(255, rgb[0]+40)}, ${Math.min(255, rgb[1]+40)}, ${Math.min(255, rgb[2]+40)}, 0.4)`);
-    gradient.addColorStop(1, 'rgba(0,0,0,0)');
-
-    gloveCtx.fillStyle = gradient;
-    gloveCtx.beginPath();
-    gloveCtx.arc(x, y, 12, 0, Math.PI * 2);
-    gloveCtx.fill();
-  }
+  vertexCountSpan.innerText = totalVertices;
 }
 
 // Prepare video canvas
@@ -1185,10 +731,8 @@ function prepareVideoCanvas() {
   if (videoCanvas.width !== vw || videoCanvas.height !== vh) {
     videoCanvas.width = vw;
     videoCanvas.height = vh;
-    gloveCanvas.width = vw;
-    gloveCanvas.height = vh;
-    processCanvas.width = Math.round(vw * PROCESS_SCALE);
-    processCanvas.height = Math.round(vh * PROCESS_SCALE);
+    wireframeCanvas.width = vw;
+    wireframeCanvas.height = vh;
   }
 
   videoCtx.save();
@@ -1202,59 +746,19 @@ function prepareVideoCanvas() {
 function onHandResults(results) {
   prepareVideoCanvas();
 
+  // Clear wireframe canvas
+  ctx.clearRect(0, 0, wireframeCanvas.width, wireframeCanvas.height);
+
   const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
   handCountSpan.innerText = numHands;
 
-  if (numHands === 0) {
-    currentLandmarks = null;
-    gloveCtx.clearRect(0, 0, gloveCanvas.width, gloveCanvas.height);
-    depthRangeSpan.innerText = '--';
-    return;
+  if (numHands > 0) {
+    for (const landmarks of results.multiHandLandmarks) {
+      drawHandWireframe(landmarks, wireframeCanvas.width, wireframeCanvas.height);
+    }
+  } else {
+    vertexCountSpan.innerText = '0';
   }
-
-  // Process first detected hand
-  currentLandmarks = results.multiHandLandmarks[0];
-  currentHandedness = results.multiHandedness ? results.multiHandedness[0] : null;
-
-  const vw = videoCanvas.width;
-  const vh = videoCanvas.height;
-  const mw = processCanvas.width;
-  const mh = processCanvas.height;
-
-  // Get hand bounds
-  const bounds = getHandBounds(currentLandmarks, vw, vh);
-
-  // Get depth range
-  const depths = currentLandmarks.map(l => l.z);
-  const minD = Math.min(...depths).toFixed(3);
-  const maxD = Math.max(...depths).toFixed(3);
-  depthRangeSpan.innerText = `${minD} to ${maxD}`;
-
-  // Draw processed frame
-  processCtx.save();
-  processCtx.translate(mw, 0);
-  processCtx.scale(-1, 1);
-  processCtx.drawImage(videoElement, 0, 0, mw, mh);
-  processCtx.restore();
-
-  const imageData = processCtx.getImageData(0, 0, mw, mh);
-
-  // Handle calibration
-  if (isCalibrating) {
-    processCalibrationFrame(imageData, currentLandmarks, vw, vh);
-  }
-
-  // Create skin mask
-  const mask = createSkinMask(imageData, currentLandmarks, bounds, vw, vh);
-
-  // Build depth map from landmarks
-  const depthMap = buildDepthMap(currentLandmarks, vw, vh, mw, mh);
-
-  // Compute normals for 3D shading
-  const normals = computeNormals(depthMap, mw, mh);
-
-  // Render the 3D glove
-  renderGlove(mask, depthMap, normals, currentLandmarks, mw, mh, vw, vh, bounds);
 
   // FPS
   frameCount++;
@@ -1300,7 +804,7 @@ async function initApp() {
     });
 
     await camera.start();
-    statusDiv.innerText = "Ready! Click 'Start Calibration' for best results.";
+    statusDiv.innerText = "3D Wireframe Active";
 
   } catch (error) {
     console.error("Init error:", error);
