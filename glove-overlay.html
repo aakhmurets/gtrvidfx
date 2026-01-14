@@ -5,10 +5,7 @@
   <title>White Glove Hand Overlay</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js" crossorigin="anonymous"></script>
 
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
 
@@ -44,7 +41,7 @@
       display: none;
     }
 
-    #videoCanvas {
+    canvas {
       position: absolute;
       left: 50%;
       top: 50%;
@@ -52,34 +49,25 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      z-index: 1;
     }
 
-    #gloveCanvas {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      z-index: 2;
-      pointer-events: none;
-    }
+    #videoCanvas { z-index: 1; }
+    #gloveCanvas { z-index: 2; pointer-events: none; }
+    #debugCanvas { z-index: 3; pointer-events: none; opacity: 0; }
 
     #info {
       position: absolute;
       top: 20px;
       left: 20px;
       z-index: 10;
-      background: rgba(0, 0, 0, 0.85);
+      background: rgba(0, 0, 0, 0.9);
       backdrop-filter: blur(10px);
       padding: 20px 25px;
       border-radius: 16px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       font-size: 13px;
       line-height: 1.8;
-      min-width: 200px;
+      min-width: 220px;
     }
 
     #info h2 {
@@ -87,7 +75,6 @@
       font-size: 18px;
       font-weight: 800;
       color: #fff;
-      letter-spacing: 0.5px;
     }
 
     #info p {
@@ -106,7 +93,9 @@
       position: absolute;
       right: 20px;
       top: 20px;
-      width: 260px;
+      width: 280px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
       background: rgba(10, 10, 10, 0.95);
       backdrop-filter: blur(20px);
       padding: 25px;
@@ -169,12 +158,6 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.3);
     }
 
-    input[type=range]::-webkit-slider-runnable-track {
-      height: 6px;
-      background: #333;
-      border-radius: 3px;
-    }
-
     .toggle-row {
       display: flex;
       justify-content: space-between;
@@ -234,37 +217,17 @@
       background-color: #000;
     }
 
-    select {
-      width: 100%;
-      padding: 10px 12px;
-      background: #1a1a1a;
-      color: #fff;
-      border: 1px solid #333;
-      border-radius: 8px;
-      font-family: 'Montserrat', sans-serif;
-      font-size: 11px;
-      cursor: pointer;
-      appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 10px center;
-    }
-
-    select:focus {
-      outline: none;
-      border-color: #555;
-    }
-
     #status {
       position: absolute;
       bottom: 20px;
       left: 20px;
-      font-size: 11px;
-      color: #444;
+      font-size: 12px;
+      color: #fff;
       z-index: 10;
-      background: rgba(0,0,0,0.7);
-      padding: 8px 15px;
-      border-radius: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 12px 20px;
+      border-radius: 25px;
+      border: 1px solid rgba(255,255,255,0.1);
     }
 
     .color-picker-row {
@@ -292,12 +255,97 @@
       box-shadow: 0 0 10px rgba(255,255,255,0.3);
     }
 
+    .btn {
+      width: 100%;
+      padding: 12px 20px;
+      background: linear-gradient(135deg, #333, #222);
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 10px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 10px;
+    }
+
+    .btn:hover {
+      background: linear-gradient(135deg, #444, #333);
+      border-color: #555;
+    }
+
+    .btn.active {
+      background: linear-gradient(135deg, #fff, #ddd);
+      color: #000;
+      border-color: #fff;
+    }
+
+    .calibration-hint {
+      font-size: 10px;
+      color: #666;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    #calibrationOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.85);
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px;
+    }
+
+    #calibrationOverlay.active {
+      display: flex;
+    }
+
+    #calibrationOverlay h2 {
+      font-size: 28px;
+      margin-bottom: 20px;
+    }
+
+    #calibrationOverlay p {
+      font-size: 16px;
+      color: #aaa;
+      max-width: 500px;
+      line-height: 1.6;
+      margin-bottom: 30px;
+    }
+
+    .calibration-progress {
+      width: 300px;
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .calibration-progress-bar {
+      height: 100%;
+      background: #fff;
+      width: 0%;
+      transition: width 0.1s;
+    }
+
     @media (max-width: 768px) {
       #controls {
-        width: 220px;
+        width: 240px;
         padding: 15px;
         right: 10px;
         top: 10px;
+        max-height: calc(100vh - 20px);
       }
       #info {
         left: 10px;
@@ -313,65 +361,58 @@
   <video id="input_video" playsinline></video>
   <canvas id="videoCanvas"></canvas>
   <canvas id="gloveCanvas"></canvas>
+  <canvas id="debugCanvas"></canvas>
 
   <div id="info">
-    <h2>White Glove Overlay</h2>
-    <p>Hands Detected <span id="handCount" class="value-display">0</span></p>
+    <h2>Glove Overlay</h2>
+    <p>Hands <span id="handCount" class="value-display">0</span></p>
     <p>FPS <span id="fps" class="value-display">0</span></p>
-    <p>Tracking Quality <span id="quality" class="value-display">--</span></p>
+    <p>Mode <span id="modeDisplay" class="value-display">Segmentation</span></p>
   </div>
 
   <div id="controls">
-    <div class="section-header">Glove Style</div>
+    <div class="section-header">Glove Color</div>
 
     <div class="control-group">
-      <label>Glove Color</label>
       <div class="color-picker-row">
-        <div class="color-swatch active" data-color="#ffffff" style="background: #ffffff;"></div>
-        <div class="color-swatch" data-color="#111111" style="background: #111111; border: 1px solid #444;"></div>
-        <div class="color-swatch" data-color="#e74c3c" style="background: #e74c3c;"></div>
-        <div class="color-swatch" data-color="#3498db" style="background: #3498db;"></div>
-        <div class="color-swatch" data-color="#2ecc71" style="background: #2ecc71;"></div>
-        <div class="color-swatch" data-color="#f39c12" style="background: #f39c12;"></div>
-        <div class="color-swatch" data-color="#9b59b6" style="background: #9b59b6;"></div>
-        <div class="color-swatch" data-color="#1abc9c" style="background: #1abc9c;"></div>
+        <div class="color-swatch active" data-color="255,255,255" style="background: #ffffff;"></div>
+        <div class="color-swatch" data-color="20,20,20" style="background: #141414; border: 1px solid #444;"></div>
+        <div class="color-swatch" data-color="231,76,60" style="background: #e74c3c;"></div>
+        <div class="color-swatch" data-color="52,152,219" style="background: #3498db;"></div>
+        <div class="color-swatch" data-color="46,204,113" style="background: #2ecc71;"></div>
+        <div class="color-swatch" data-color="241,196,15" style="background: #f1c40f;"></div>
+        <div class="color-swatch" data-color="155,89,182" style="background: #9b59b6;"></div>
+        <div class="color-swatch" data-color="26,188,156" style="background: #1abc9c;"></div>
       </div>
     </div>
 
-    <div class="control-group">
-      <label>Material</label>
-      <select id="materialType">
-        <option value="matte" selected>Matte Fabric</option>
-        <option value="latex">Latex/Rubber</option>
-        <option value="leather">Leather</option>
-        <option value="silk">Silk/Satin</option>
-      </select>
-    </div>
+    <div class="section-header">Skin Detection</div>
 
-    <div class="section-header">Fit Settings</div>
+    <button id="calibrateBtn" class="btn">Calibrate Skin Tone</button>
+    <p class="calibration-hint">Hold your hand in front of the camera and click to auto-detect your skin tone</p>
 
-    <div class="control-group">
+    <div class="control-group" style="margin-top: 15px;">
       <label>
-        <span>Glove Thickness</span>
-        <span class="value-display" id="thicknessValue">1.0</span>
+        <span>Detection Range</span>
+        <span class="value-display" id="rangeValue">30</span>
       </label>
-      <input type="range" id="gloveThickness" min="0.5" max="2.0" step="0.1" value="1.0">
+      <input type="range" id="skinRange" min="10" max="60" step="2" value="30">
     </div>
 
     <div class="control-group">
       <label>
-        <span>Finger Width</span>
-        <span class="value-display" id="fingerWidthValue">1.0</span>
+        <span>Edge Smoothing</span>
+        <span class="value-display" id="smoothValue">3</span>
       </label>
-      <input type="range" id="fingerWidth" min="0.6" max="1.8" step="0.1" value="1.0">
+      <input type="range" id="edgeSmooth" min="0" max="10" step="1" value="3">
     </div>
 
     <div class="control-group">
       <label>
-        <span>Smoothness</span>
-        <span class="value-display" id="smoothnessValue">0.7</span>
+        <span>Mask Expansion</span>
+        <span class="value-display" id="expandValue">4</span>
       </label>
-      <input type="range" id="smoothness" min="0" max="1" step="0.1" value="0.7">
+      <input type="range" id="maskExpand" min="0" max="15" step="1" value="4">
     </div>
 
     <div class="section-header">Display</div>
@@ -385,103 +426,123 @@
     </div>
 
     <div class="toggle-row">
+      <span class="toggle-text">Show Debug Mask</span>
+      <label class="switch">
+        <input type="checkbox" id="showDebug">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-text">Soft Edges</span>
+      <label class="switch">
+        <input type="checkbox" id="softEdges" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
       <span class="toggle-text">3D Shading</span>
       <label class="switch">
         <input type="checkbox" id="use3DShading" checked>
         <span class="slider"></span>
       </label>
     </div>
-
-    <div class="toggle-row">
-      <span class="toggle-text">Finger Creases</span>
-      <label class="switch">
-        <input type="checkbox" id="showCreases" checked>
-        <span class="slider"></span>
-      </label>
-    </div>
-
-    <div class="toggle-row">
-      <span class="toggle-text">Wrist Band</span>
-      <label class="switch">
-        <input type="checkbox" id="showWristBand" checked>
-        <span class="slider"></span>
-      </label>
-    </div>
   </div>
 
   <div id="status">Initializing...</div>
+
+  <div id="calibrationOverlay">
+    <h2>Calibrating Skin Tone</h2>
+    <p>Hold your hand steady in front of the camera. Move it slowly to capture different angles and lighting.</p>
+    <div class="calibration-progress">
+      <div class="calibration-progress-bar" id="calibrationBar"></div>
+    </div>
+    <p id="calibrationStatus">Sampling skin colors...</p>
+  </div>
 </div>
 
 <script>
-console.log(">>> White Glove Overlay Starting...");
+console.log(">>> Edge-Based Glove Overlay Starting...");
 
 // DOM Elements
 const videoElement = document.getElementById('input_video');
 const videoCanvas = document.getElementById('videoCanvas');
-const videoCtx = videoCanvas.getContext('2d');
+const videoCtx = videoCanvas.getContext('2d', { willReadFrequently: true });
 const gloveCanvas = document.getElementById('gloveCanvas');
 const gloveCtx = gloveCanvas.getContext('2d');
+const debugCanvas = document.getElementById('debugCanvas');
+const debugCtx = debugCanvas.getContext('2d');
 const statusDiv = document.getElementById('status');
 const handCountSpan = document.getElementById('handCount');
 const fpsSpan = document.getElementById('fps');
-const qualitySpan = document.getElementById('quality');
+const modeDisplay = document.getElementById('modeDisplay');
+const calibrationOverlay = document.getElementById('calibrationOverlay');
+const calibrationBar = document.getElementById('calibrationBar');
+const calibrationStatus = document.getElementById('calibrationStatus');
 
 // Configuration
 let config = {
-  gloveColor: '#ffffff',
-  materialType: 'matte',
-  gloveThickness: 1.0,
-  fingerWidth: 1.0,
-  smoothness: 0.7,
+  gloveColor: [255, 255, 255],
+  skinRange: 30,
+  edgeSmooth: 3,
+  maskExpand: 4,
   showVideo: true,
-  use3DShading: true,
-  showCreases: true,
-  showWristBand: true
+  showDebug: false,
+  softEdges: true,
+  use3DShading: true
 };
 
-// Smoothing buffers for each hand
-const landmarkHistory = [[], []];
-const HISTORY_LENGTH = 5;
+// Calibrated skin color parameters (YCrCb color space)
+let skinParams = {
+  yMin: 60, yMax: 255,
+  crMin: 135, crMax: 180,
+  cbMin: 85, cbMax: 135,
+  calibrated: false
+};
 
-// FPS Tracking
+// FPS tracking
 let frameCount = 0;
 let lastTime = performance.now();
 
-// MediaPipe finger indices
-const FINGER_INDICES = {
-  thumb: [0, 1, 2, 3, 4],
-  index: [0, 5, 6, 7, 8],
-  middle: [0, 9, 10, 11, 12],
-  ring: [0, 13, 14, 15, 16],
-  pinky: [0, 17, 18, 19, 20]
-};
+// Calibration state
+let isCalibrating = false;
+let calibrationSamples = [];
+let calibrationFrame = 0;
+const CALIBRATION_FRAMES = 60;
 
-const PALM_INDICES = [0, 1, 5, 9, 13, 17];
+// Hand tracking state
+let currentLandmarks = null;
+let handBounds = null;
+
+// Processing canvas (smaller for performance)
+const processCanvas = document.createElement('canvas');
+const processCtx = processCanvas.getContext('2d', { willReadFrequently: true });
+const PROCESS_SCALE = 0.5; // Process at half resolution for speed
 
 // UI Event Handlers
 document.querySelectorAll('.color-swatch').forEach(swatch => {
   swatch.addEventListener('click', () => {
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
     swatch.classList.add('active');
-    config.gloveColor = swatch.dataset.color;
+    config.gloveColor = swatch.dataset.color.split(',').map(Number);
   });
 });
 
-document.getElementById('materialType').onchange = (e) => config.materialType = e.target.value;
-
-document.getElementById('gloveThickness').oninput = (e) => {
-  config.gloveThickness = parseFloat(e.target.value);
-  document.getElementById('thicknessValue').innerText = config.gloveThickness.toFixed(1);
+document.getElementById('skinRange').oninput = (e) => {
+  config.skinRange = parseInt(e.target.value);
+  document.getElementById('rangeValue').innerText = config.skinRange;
+  updateSkinParams();
 };
 
-document.getElementById('fingerWidth').oninput = (e) => {
-  config.fingerWidth = parseFloat(e.target.value);
-  document.getElementById('fingerWidthValue').innerText = config.fingerWidth.toFixed(1);
+document.getElementById('edgeSmooth').oninput = (e) => {
+  config.edgeSmooth = parseInt(e.target.value);
+  document.getElementById('smoothValue').innerText = config.edgeSmooth;
 };
 
-document.getElementById('smoothness').oninput = (e) => {
-  config.smoothness = parseFloat(e.target.value);
-  document.getElementById('smoothnessValue').innerText = config.smoothness.toFixed(1);
+document.getElementById('maskExpand').oninput = (e) => {
+  config.maskExpand = parseInt(e.target.value);
+  document.getElementById('expandValue').innerText = config.maskExpand;
 };
 
 document.getElementById('showVideo').onchange = (e) => {
@@ -489,429 +550,494 @@ document.getElementById('showVideo').onchange = (e) => {
   videoCanvas.style.opacity = config.showVideo ? 1 : 0;
 };
 
+document.getElementById('showDebug').onchange = (e) => {
+  config.showDebug = e.target.checked;
+  debugCanvas.style.opacity = config.showDebug ? 0.7 : 0;
+};
+
+document.getElementById('softEdges').onchange = (e) => config.softEdges = e.target.checked;
 document.getElementById('use3DShading').onchange = (e) => config.use3DShading = e.target.checked;
-document.getElementById('showCreases').onchange = (e) => config.showCreases = e.target.checked;
-document.getElementById('showWristBand').onchange = (e) => config.showWristBand = e.target.checked;
 
-// Smooth landmarks using exponential moving average
-function smoothLandmarks(landmarks, handIndex) {
-  const history = landmarkHistory[handIndex];
-  history.push(JSON.parse(JSON.stringify(landmarks)));
+document.getElementById('calibrateBtn').addEventListener('click', startCalibration);
 
-  if (history.length > HISTORY_LENGTH) {
-    history.shift();
-  }
+// Update skin detection parameters based on range slider
+function updateSkinParams() {
+  if (!skinParams.calibrated) return;
 
-  if (history.length < 2 || config.smoothness === 0) {
-    return landmarks;
-  }
-
-  const smoothed = [];
-  const alpha = 1 - config.smoothness;
-
-  for (let i = 0; i < 21; i++) {
-    let x = 0, y = 0, z = 0;
-    let totalWeight = 0;
-
-    for (let j = 0; j < history.length; j++) {
-      const weight = Math.pow(alpha, history.length - 1 - j);
-      x += history[j][i].x * weight;
-      y += history[j][i].y * weight;
-      z += history[j][i].z * weight;
-      totalWeight += weight;
-    }
-
-    smoothed.push({
-      x: x / totalWeight,
-      y: y / totalWeight,
-      z: z / totalWeight
-    });
-  }
-
-  return smoothed;
+  const range = config.skinRange;
+  skinParams.crMin = Math.max(100, skinParams.crCenter - range);
+  skinParams.crMax = Math.min(200, skinParams.crCenter + range);
+  skinParams.cbMin = Math.max(70, skinParams.cbCenter - range);
+  skinParams.cbMax = Math.min(150, skinParams.cbCenter + range);
 }
 
-// Convert normalized coordinates to canvas pixels
-function toPixel(landmark, width, height) {
+// Start calibration process
+function startCalibration() {
+  if (!currentLandmarks) {
+    alert('Please show your hand to the camera first!');
+    return;
+  }
+
+  isCalibrating = true;
+  calibrationSamples = [];
+  calibrationFrame = 0;
+  calibrationOverlay.classList.add('active');
+  calibrationBar.style.width = '0%';
+}
+
+// Process calibration frame
+function processCalibrationFrame(imageData, bounds) {
+  if (!isCalibrating) return;
+
+  const data = imageData.data;
+  const samples = [];
+
+  // Sample pixels within hand bounding box
+  const startX = Math.max(0, Math.floor(bounds.minX));
+  const endX = Math.min(imageData.width, Math.ceil(bounds.maxX));
+  const startY = Math.max(0, Math.floor(bounds.minY));
+  const endY = Math.min(imageData.height, Math.ceil(bounds.maxY));
+
+  for (let y = startY; y < endY; y += 3) {
+    for (let x = startX; x < endX; x += 3) {
+      const idx = (y * imageData.width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+
+      // Convert to YCrCb
+      const ycrcb = rgbToYCrCb(r, g, b);
+
+      // Basic skin filter to avoid background
+      if (ycrcb.cr > 120 && ycrcb.cr < 200 && ycrcb.cb > 70 && ycrcb.cb < 150) {
+        samples.push(ycrcb);
+      }
+    }
+  }
+
+  calibrationSamples.push(...samples);
+  calibrationFrame++;
+
+  const progress = (calibrationFrame / CALIBRATION_FRAMES) * 100;
+  calibrationBar.style.width = progress + '%';
+  calibrationStatus.innerText = `Sampling... ${calibrationFrame}/${CALIBRATION_FRAMES} frames`;
+
+  if (calibrationFrame >= CALIBRATION_FRAMES) {
+    finishCalibration();
+  }
+}
+
+// Finish calibration and compute parameters
+function finishCalibration() {
+  isCalibrating = false;
+
+  if (calibrationSamples.length < 100) {
+    calibrationOverlay.classList.remove('active');
+    alert('Not enough skin samples detected. Please try again with your hand clearly visible.');
+    return;
+  }
+
+  // Calculate median values (more robust than mean)
+  const crValues = calibrationSamples.map(s => s.cr).sort((a, b) => a - b);
+  const cbValues = calibrationSamples.map(s => s.cb).sort((a, b) => a - b);
+
+  const medianCr = crValues[Math.floor(crValues.length / 2)];
+  const medianCb = cbValues[Math.floor(cbValues.length / 2)];
+
+  skinParams.crCenter = medianCr;
+  skinParams.cbCenter = medianCb;
+  skinParams.calibrated = true;
+
+  updateSkinParams();
+
+  calibrationStatus.innerText = 'Calibration complete!';
+
+  setTimeout(() => {
+    calibrationOverlay.classList.remove('active');
+    statusDiv.innerText = 'Calibrated! Skin detection optimized for your skin tone.';
+  }, 500);
+}
+
+// Convert RGB to YCrCb color space
+function rgbToYCrCb(r, g, b) {
+  const y = 0.299 * r + 0.587 * g + 0.114 * b;
+  const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+  const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+  return { y, cr, cb };
+}
+
+// Check if pixel is skin color
+function isSkinPixel(r, g, b) {
+  const { y, cr, cb } = rgbToYCrCb(r, g, b);
+
+  return y >= skinParams.yMin && y <= skinParams.yMax &&
+         cr >= skinParams.crMin && cr <= skinParams.crMax &&
+         cb >= skinParams.cbMin && cb <= skinParams.cbMax;
+}
+
+// Get hand bounding box from landmarks with padding
+function getHandBounds(landmarks, width, height, padding = 0.15) {
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+
+  for (const lm of landmarks) {
+    const x = (1 - lm.x) * width; // Mirror
+    const y = lm.y * height;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+
+  // Add padding
+  const padX = (maxX - minX) * padding;
+  const padY = (maxY - minY) * padding;
+
   return {
-    x: (1 - landmark.x) * width,  // Mirror for natural view
-    y: landmark.y * height,
-    z: landmark.z
+    minX: Math.max(0, minX - padX),
+    maxX: Math.min(width, maxX + padX),
+    minY: Math.max(0, minY - padY),
+    maxY: Math.min(height, maxY + padY),
+    centerX: (minX + maxX) / 2,
+    centerY: (minY + maxY) / 2,
+    width: maxX - minX + padX * 2,
+    height: maxY - minY + padY * 2
   };
 }
 
-// Calculate perpendicular offset for finger tube
-function getPerpendicularOffset(p1, p2, distance) {
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  return {
-    x: -dy / len * distance,
-    y: dx / len * distance
-  };
-}
+// Create skin mask from image data within bounds
+function createSkinMask(imageData, bounds, landmarks, width, height) {
+  const data = imageData.data;
+  const maskWidth = imageData.width;
+  const maskHeight = imageData.height;
+  const mask = new Uint8Array(maskWidth * maskHeight);
 
-// Get material-based gradient
-function getMaterialGradient(ctx, x1, y1, x2, y2, baseColor) {
-  const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
-  const rgb = hexToRgb(baseColor);
+  // Get landmark positions for guided detection
+  const landmarkPixels = landmarks.map(lm => ({
+    x: Math.round((1 - lm.x) * width * PROCESS_SCALE),
+    y: Math.round(lm.y * height * PROCESS_SCALE)
+  }));
 
-  switch (config.materialType) {
-    case 'latex':
-      // Shiny, high contrast
-      gradient.addColorStop(0, `rgba(${rgb.r + 60}, ${rgb.g + 60}, ${rgb.b + 60}, 1)`);
-      gradient.addColorStop(0.3, `rgba(${rgb.r + 30}, ${rgb.g + 30}, ${rgb.b + 30}, 1)`);
-      gradient.addColorStop(0.5, baseColor);
-      gradient.addColorStop(0.7, `rgba(${Math.max(0, rgb.r - 40)}, ${Math.max(0, rgb.g - 40)}, ${Math.max(0, rgb.b - 40)}, 1)`);
-      gradient.addColorStop(1, `rgba(${Math.max(0, rgb.r - 60)}, ${Math.max(0, rgb.g - 60)}, ${Math.max(0, rgb.b - 60)}, 1)`);
-      break;
-    case 'leather':
-      // Subtle grain
-      gradient.addColorStop(0, `rgba(${rgb.r + 20}, ${rgb.g + 20}, ${rgb.b + 20}, 1)`);
-      gradient.addColorStop(0.5, baseColor);
-      gradient.addColorStop(1, `rgba(${Math.max(0, rgb.r - 30)}, ${Math.max(0, rgb.g - 30)}, ${Math.max(0, rgb.b - 30)}, 1)`);
-      break;
-    case 'silk':
-      // Smooth, soft gradients
-      gradient.addColorStop(0, `rgba(${rgb.r + 40}, ${rgb.g + 40}, ${rgb.b + 40}, 1)`);
-      gradient.addColorStop(0.4, `rgba(${rgb.r + 15}, ${rgb.g + 15}, ${rgb.b + 15}, 1)`);
-      gradient.addColorStop(0.6, baseColor);
-      gradient.addColorStop(1, `rgba(${Math.max(0, rgb.r - 20)}, ${Math.max(0, rgb.g - 20)}, ${Math.max(0, rgb.b - 20)}, 1)`);
-      break;
-    default: // matte
-      gradient.addColorStop(0, `rgba(${rgb.r + 15}, ${rgb.g + 15}, ${rgb.b + 15}, 1)`);
-      gradient.addColorStop(0.5, baseColor);
-      gradient.addColorStop(1, `rgba(${Math.max(0, rgb.r - 25)}, ${Math.max(0, rgb.g - 25)}, ${Math.max(0, rgb.b - 25)}, 1)`);
-  }
+  // Process only within bounds
+  const startX = Math.max(0, Math.floor(bounds.minX * PROCESS_SCALE));
+  const endX = Math.min(maskWidth, Math.ceil(bounds.maxX * PROCESS_SCALE));
+  const startY = Math.max(0, Math.floor(bounds.minY * PROCESS_SCALE));
+  const endY = Math.min(maskHeight, Math.ceil(bounds.maxY * PROCESS_SCALE));
 
-  return gradient;
-}
+  // First pass: detect skin pixels
+  for (let y = startY; y < endY; y++) {
+    for (let x = startX; x < endX; x++) {
+      const idx = (y * maskWidth + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
 
-function hexToRgb(hex) {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result ? {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16)
-  } : { r: 255, g: 255, b: 255 };
-}
+      if (isSkinPixel(r, g, b)) {
+        // Check proximity to landmarks for more accurate detection
+        let nearLandmark = false;
+        for (const lp of landmarkPixels) {
+          const dist = Math.sqrt(Math.pow(x - lp.x, 2) + Math.pow(y - lp.y, 2));
+          if (dist < bounds.width * PROCESS_SCALE * 0.6) {
+            nearLandmark = true;
+            break;
+          }
+        }
 
-// Draw a single finger as a 3D tube
-function drawFingerTube(ctx, points, baseWidth, fingerName) {
-  if (points.length < 2) return;
-
-  // Calculate widths that taper toward fingertip
-  const widths = [];
-  for (let i = 0; i < points.length; i++) {
-    const taper = 1 - (i / (points.length - 1)) * 0.4;
-    let width = baseWidth * taper * config.fingerWidth * config.gloveThickness;
-
-    // Thumb is thicker at base
-    if (fingerName === 'thumb' && i < 2) {
-      width *= 1.3;
-    }
-    widths.push(width);
-  }
-
-  // Build left and right edges of the finger tube
-  const leftEdge = [];
-  const rightEdge = [];
-
-  for (let i = 0; i < points.length; i++) {
-    let offset;
-    if (i === 0) {
-      offset = getPerpendicularOffset(points[0], points[1], widths[0]);
-    } else if (i === points.length - 1) {
-      offset = getPerpendicularOffset(points[i - 1], points[i], widths[i]);
-    } else {
-      // Average direction for smooth curves
-      const offset1 = getPerpendicularOffset(points[i - 1], points[i], widths[i]);
-      const offset2 = getPerpendicularOffset(points[i], points[i + 1], widths[i]);
-      offset = {
-        x: (offset1.x + offset2.x) / 2,
-        y: (offset1.y + offset2.y) / 2
-      };
-    }
-
-    leftEdge.push({ x: points[i].x + offset.x, y: points[i].y + offset.y });
-    rightEdge.push({ x: points[i].x - offset.x, y: points[i].y - offset.y });
-  }
-
-  // Draw the finger tube with 3D shading
-  ctx.beginPath();
-
-  // Left edge (top to bottom)
-  ctx.moveTo(leftEdge[0].x, leftEdge[0].y);
-  for (let i = 1; i < leftEdge.length; i++) {
-    ctx.lineTo(leftEdge[i].x, leftEdge[i].y);
-  }
-
-  // Rounded fingertip
-  const tipLeft = leftEdge[leftEdge.length - 1];
-  const tipRight = rightEdge[rightEdge.length - 1];
-  const tipCenter = points[points.length - 1];
-
-  ctx.quadraticCurveTo(
-    tipCenter.x + (tipLeft.x - tipCenter.x) * 0.5,
-    tipCenter.y + widths[widths.length - 1] * 0.8,
-    tipRight.x,
-    tipRight.y
-  );
-
-  // Right edge (bottom to top)
-  for (let i = rightEdge.length - 2; i >= 0; i--) {
-    ctx.lineTo(rightEdge[i].x, rightEdge[i].y);
-  }
-
-  ctx.closePath();
-
-  // Apply 3D shading
-  if (config.use3DShading) {
-    const gradient = getMaterialGradient(
-      ctx,
-      leftEdge[0].x, leftEdge[0].y,
-      rightEdge[0].x, rightEdge[0].y,
-      config.gloveColor
-    );
-    ctx.fillStyle = gradient;
-  } else {
-    ctx.fillStyle = config.gloveColor;
-  }
-
-  ctx.fill();
-
-  // Draw crease lines at joints
-  if (config.showCreases && fingerName !== 'thumb') {
-    const rgb = hexToRgb(config.gloveColor);
-    ctx.strokeStyle = `rgba(${Math.max(0, rgb.r - 60)}, ${Math.max(0, rgb.g - 60)}, ${Math.max(0, rgb.b - 60)}, 0.4)`;
-    ctx.lineWidth = 1.5;
-
-    // Draw creases at knuckle positions (indices 1, 2 of finger points after base)
-    for (let i = 2; i < points.length - 1; i++) {
-      const width = widths[i] * 0.85;
-      const offset = getPerpendicularOffset(
-        points[i - 1],
-        points[i],
-        width
-      );
-
-      ctx.beginPath();
-      ctx.moveTo(points[i].x + offset.x * 0.9, points[i].y + offset.y * 0.9);
-      ctx.lineTo(points[i].x - offset.x * 0.9, points[i].y - offset.y * 0.9);
-      ctx.stroke();
+        if (nearLandmark) {
+          mask[y * maskWidth + x] = 255;
+        }
+      }
     }
   }
+
+  // Morphological operations to clean up mask
+  const cleaned = morphologicalClose(mask, maskWidth, maskHeight, 2 + Math.floor(config.edgeSmooth / 2));
+  const filled = fillHoles(cleaned, maskWidth, maskHeight, landmarkPixels);
+  const expanded = dilateMask(filled, maskWidth, maskHeight, config.maskExpand);
+
+  return expanded;
 }
 
-// Draw the palm as a filled polygon with 3D shading
-function drawPalm(ctx, landmarks, width, height) {
-  const palmPoints = [
-    toPixel(landmarks[0], width, height),   // Wrist
-    toPixel(landmarks[1], width, height),   // Thumb base
-    toPixel(landmarks[2], width, height),   // Thumb knuckle
-    toPixel(landmarks[5], width, height),   // Index base
-    toPixel(landmarks[9], width, height),   // Middle base
-    toPixel(landmarks[13], width, height),  // Ring base
-    toPixel(landmarks[17], width, height),  // Pinky base
-  ];
-
-  // Expand palm slightly for better coverage
-  const centerX = palmPoints.reduce((sum, p) => sum + p.x, 0) / palmPoints.length;
-  const centerY = palmPoints.reduce((sum, p) => sum + p.y, 0) / palmPoints.length;
-
-  const expandedPoints = palmPoints.map(p => {
-    const dx = p.x - centerX;
-    const dy = p.y - centerY;
-    const expand = 1.15 * config.gloveThickness;
-    return {
-      x: centerX + dx * expand,
-      y: centerY + dy * expand
-    };
-  });
-
-  // Draw main palm shape
-  ctx.beginPath();
-  ctx.moveTo(expandedPoints[0].x, expandedPoints[0].y);
-
-  // Smooth curve through palm points
-  for (let i = 1; i < expandedPoints.length; i++) {
-    const prev = expandedPoints[i - 1];
-    const curr = expandedPoints[i];
-    const cpX = (prev.x + curr.x) / 2;
-    const cpY = (prev.y + curr.y) / 2;
-    ctx.quadraticCurveTo(prev.x, prev.y, cpX, cpY);
-  }
-
-  // Close the palm
-  ctx.quadraticCurveTo(
-    expandedPoints[expandedPoints.length - 1].x,
-    expandedPoints[expandedPoints.length - 1].y,
-    expandedPoints[0].x,
-    expandedPoints[0].y
-  );
-
-  ctx.closePath();
-
-  // Apply 3D shading
-  if (config.use3DShading) {
-    const gradient = getMaterialGradient(
-      ctx,
-      expandedPoints[1].x, expandedPoints[1].y,
-      expandedPoints[5].x, expandedPoints[5].y,
-      config.gloveColor
-    );
-    ctx.fillStyle = gradient;
-  } else {
-    ctx.fillStyle = config.gloveColor;
-  }
-
-  ctx.fill();
+// Morphological closing (dilate then erode) to fill small gaps
+function morphologicalClose(mask, width, height, radius) {
+  const dilated = dilateMask(mask, width, height, radius);
+  return erodeMask(dilated, width, height, radius);
 }
 
-// Draw webbing between fingers
-function drawWebbing(ctx, landmarks, width, height) {
-  const webbingPairs = [
-    [5, 6, 9, 10],   // Index to middle
-    [9, 10, 13, 14], // Middle to ring
-    [13, 14, 17, 18] // Ring to pinky
-  ];
+// Dilate mask
+function dilateMask(mask, width, height, radius) {
+  const result = new Uint8Array(mask.length);
 
-  const rgb = hexToRgb(config.gloveColor);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let maxVal = 0;
 
-  webbingPairs.forEach(([b1, t1, b2, t2]) => {
-    const base1 = toPixel(landmarks[b1], width, height);
-    const tip1 = toPixel(landmarks[t1], width, height);
-    const base2 = toPixel(landmarks[b2], width, height);
-    const tip2 = toPixel(landmarks[t2], width, height);
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
 
-    // Calculate webbing depth (partial way up fingers)
-    const depth = 0.25;
-    const web1 = {
-      x: base1.x + (tip1.x - base1.x) * depth,
-      y: base1.y + (tip1.y - base1.y) * depth
-    };
-    const web2 = {
-      x: base2.x + (tip2.x - base2.x) * depth,
-      y: base2.y + (tip2.y - base2.y) * depth
-    };
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            if (dx * dx + dy * dy <= radius * radius) {
+              maxVal = Math.max(maxVal, mask[ny * width + nx]);
+            }
+          }
+        }
+      }
 
-    ctx.beginPath();
-    ctx.moveTo(base1.x, base1.y);
-    ctx.lineTo(web1.x, web1.y);
-    ctx.lineTo(web2.x, web2.y);
-    ctx.lineTo(base2.x, base2.y);
-    ctx.closePath();
-
-    // Slightly darker for depth
-    if (config.use3DShading) {
-      ctx.fillStyle = `rgba(${Math.max(0, rgb.r - 15)}, ${Math.max(0, rgb.g - 15)}, ${Math.max(0, rgb.b - 15)}, 1)`;
-    } else {
-      ctx.fillStyle = config.gloveColor;
+      result[y * width + x] = maxVal;
     }
-    ctx.fill();
-  });
-}
-
-// Draw wrist band
-function drawWristBand(ctx, landmarks, width, height) {
-  if (!config.showWristBand) return;
-
-  const wrist = toPixel(landmarks[0], width, height);
-  const thumb = toPixel(landmarks[1], width, height);
-  const pinky = toPixel(landmarks[17], width, height);
-
-  // Calculate wrist direction and width
-  const wristWidth = Math.sqrt(
-    Math.pow(pinky.x - thumb.x, 2) + Math.pow(pinky.y - thumb.y, 2)
-  ) * 0.7 * config.gloveThickness;
-
-  // Perpendicular to forearm direction
-  const dx = (thumb.x + pinky.x) / 2 - wrist.x;
-  const dy = (thumb.y + pinky.y) / 2 - wrist.y;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-
-  const perpX = -dy / len * wristWidth;
-  const perpY = dx / len * wristWidth;
-
-  // Wrist band points
-  const bandDepth = 25 * config.gloveThickness;
-  const extendX = dx / len * bandDepth;
-  const extendY = dy / len * bandDepth;
-
-  const p1 = { x: wrist.x + perpX, y: wrist.y + perpY };
-  const p2 = { x: wrist.x - perpX, y: wrist.y - perpY };
-  const p3 = { x: wrist.x - perpX - extendX, y: wrist.y - perpY - extendY };
-  const p4 = { x: wrist.x + perpX - extendX, y: wrist.y + perpY - extendY };
-
-  ctx.beginPath();
-  ctx.moveTo(p1.x, p1.y);
-  ctx.lineTo(p2.x, p2.y);
-  ctx.lineTo(p3.x, p3.y);
-  ctx.lineTo(p4.x, p4.y);
-  ctx.closePath();
-
-  // Darker band color
-  const rgb = hexToRgb(config.gloveColor);
-  if (config.use3DShading) {
-    const gradient = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
-    gradient.addColorStop(0, `rgba(${Math.max(0, rgb.r - 30)}, ${Math.max(0, rgb.g - 30)}, ${Math.max(0, rgb.b - 30)}, 1)`);
-    gradient.addColorStop(0.5, `rgba(${Math.max(0, rgb.r - 10)}, ${Math.max(0, rgb.g - 10)}, ${Math.max(0, rgb.b - 10)}, 1)`);
-    gradient.addColorStop(1, `rgba(${Math.max(0, rgb.r - 40)}, ${Math.max(0, rgb.g - 40)}, ${Math.max(0, rgb.b - 40)}, 1)`);
-    ctx.fillStyle = gradient;
-  } else {
-    ctx.fillStyle = `rgba(${Math.max(0, rgb.r - 20)}, ${Math.max(0, rgb.g - 20)}, ${Math.max(0, rgb.b - 20)}, 1)`;
   }
-  ctx.fill();
 
-  // Band edge highlight
-  ctx.strokeStyle = `rgba(${Math.min(255, rgb.r + 30)}, ${Math.min(255, rgb.g + 30)}, ${Math.min(255, rgb.b + 30)}, 0.5)`;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(p1.x, p1.y);
-  ctx.lineTo(p2.x, p2.y);
-  ctx.stroke();
+  return result;
 }
 
-// Draw complete glove for one hand
-function drawGlove(ctx, landmarks, width, height, handIndex) {
-  // Apply smoothing
-  const smoothed = smoothLandmarks(landmarks, handIndex);
+// Erode mask
+function erodeMask(mask, width, height, radius) {
+  const result = new Uint8Array(mask.length);
 
-  // Calculate base finger width based on hand size
-  const wrist = toPixel(smoothed[0], width, height);
-  const middle = toPixel(smoothed[9], width, height);
-  const handSize = Math.sqrt(
-    Math.pow(middle.x - wrist.x, 2) + Math.pow(middle.y - wrist.y, 2)
-  );
-  const baseFingerWidth = handSize * 0.12;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let minVal = 255;
 
-  // Draw layers from back to front for proper overlap
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
 
-  // 1. Draw wrist band (back)
-  drawWristBand(ctx, smoothed, width, height);
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            if (dx * dx + dy * dy <= radius * radius) {
+              minVal = Math.min(minVal, mask[ny * width + nx]);
+            }
+          }
+        }
+      }
 
-  // 2. Draw palm
-  drawPalm(ctx, smoothed, width, height);
+      result[y * width + x] = minVal;
+    }
+  }
 
-  // 3. Draw webbing between fingers
-  drawWebbing(ctx, smoothed, width, height);
+  return result;
+}
 
-  // 4. Draw each finger (ordered by depth for natural overlap)
-  const fingerOrder = ['pinky', 'ring', 'middle', 'index', 'thumb'];
+// Fill holes in mask using flood fill from landmarks
+function fillHoles(mask, width, height, landmarks) {
+  const result = new Uint8Array(mask);
 
-  fingerOrder.forEach(fingerName => {
-    const indices = FINGER_INDICES[fingerName];
-    const points = indices.slice(1).map(i => toPixel(smoothed[i], width, height));
+  // Use convex hull approximation - connect landmarks
+  const hull = getConvexHull(landmarks);
 
-    // Adjust width based on finger
-    let widthMult = 1.0;
-    if (fingerName === 'thumb') widthMult = 1.2;
-    if (fingerName === 'pinky') widthMult = 0.75;
-    if (fingerName === 'index') widthMult = 0.9;
-    if (fingerName === 'ring') widthMult = 0.85;
+  // Fill inside the hull
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (isPointInPolygon(x, y, hull)) {
+        // Check if surrounded by skin pixels
+        let skinNeighbors = 0;
+        const checkRadius = 8;
 
-    drawFingerTube(ctx, points, baseFingerWidth * widthMult, fingerName);
-  });
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2;
+          const checkX = Math.round(x + Math.cos(angle) * checkRadius);
+          const checkY = Math.round(y + Math.sin(angle) * checkRadius);
+
+          if (checkX >= 0 && checkX < width && checkY >= 0 && checkY < height) {
+            if (mask[checkY * width + checkX] > 0) {
+              skinNeighbors++;
+            }
+          }
+        }
+
+        if (skinNeighbors >= 4) {
+          result[y * width + x] = 255;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+// Get convex hull of points
+function getConvexHull(points) {
+  if (points.length < 3) return points;
+
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+
+  const lower = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+
+  const upper = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+
+  lower.pop();
+  upper.pop();
+
+  return lower.concat(upper);
+}
+
+function cross(o, a, b) {
+  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+// Check if point is inside polygon
+function isPointInPolygon(x, y, polygon) {
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+// Gaussian blur for soft edges
+function blurMask(mask, width, height, radius) {
+  if (radius <= 0) return mask;
+
+  const result = new Uint8Array(mask.length);
+  const kernel = [];
+  const sigma = radius / 2;
+  let sum = 0;
+
+  for (let i = -radius; i <= radius; i++) {
+    const val = Math.exp(-(i * i) / (2 * sigma * sigma));
+    kernel.push(val);
+    sum += val;
+  }
+
+  for (let i = 0; i < kernel.length; i++) {
+    kernel[i] /= sum;
+  }
+
+  // Horizontal pass
+  const temp = new Float32Array(mask.length);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let val = 0;
+      for (let i = -radius; i <= radius; i++) {
+        const nx = Math.min(Math.max(x + i, 0), width - 1);
+        val += mask[y * width + nx] * kernel[i + radius];
+      }
+      temp[y * width + x] = val;
+    }
+  }
+
+  // Vertical pass
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let val = 0;
+      for (let i = -radius; i <= radius; i++) {
+        const ny = Math.min(Math.max(y + i, 0), height - 1);
+        val += temp[ny * width + x] * kernel[i + radius];
+      }
+      result[y * width + x] = Math.round(val);
+    }
+  }
+
+  return result;
+}
+
+// Draw glove overlay using the mask
+function drawGloveOverlay(mask, maskWidth, maskHeight, canvasWidth, canvasHeight, bounds) {
+  gloveCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+  // Apply blur for soft edges
+  const blurRadius = config.softEdges ? Math.max(2, config.edgeSmooth) : 0;
+  const blurredMask = blurMask(mask, maskWidth, maskHeight, blurRadius);
+
+  // Create image data for the glove
+  const scaleX = canvasWidth / maskWidth;
+  const scaleY = canvasHeight / maskHeight;
+
+  // Draw at full resolution
+  const imageData = gloveCtx.createImageData(canvasWidth, canvasHeight);
+  const data = imageData.data;
+
+  const [r, g, b] = config.gloveColor;
+
+  // Precompute shading offsets
+  const lightX = bounds.centerX;
+  const lightY = bounds.centerY - bounds.height * 0.3;
+
+  for (let y = 0; y < canvasHeight; y++) {
+    const maskY = Math.floor(y / scaleY);
+
+    for (let x = 0; x < canvasWidth; x++) {
+      const maskX = Math.floor(x / scaleX);
+      const maskIdx = maskY * maskWidth + maskX;
+      const alpha = blurredMask[maskIdx];
+
+      if (alpha > 0) {
+        const idx = (y * canvasWidth + x) * 4;
+
+        let finalR = r, finalG = g, finalB = b;
+
+        // Apply 3D shading
+        if (config.use3DShading) {
+          const dx = x - lightX;
+          const dy = y - lightY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const maxDist = bounds.width * 0.8;
+          const shade = Math.max(0.7, 1 - (dist / maxDist) * 0.4);
+
+          finalR = Math.round(r * shade);
+          finalG = Math.round(g * shade);
+          finalB = Math.round(b * shade);
+
+          // Add highlight
+          if (dist < maxDist * 0.3) {
+            const highlight = (1 - dist / (maxDist * 0.3)) * 0.2;
+            finalR = Math.min(255, Math.round(finalR + 255 * highlight));
+            finalG = Math.min(255, Math.round(finalG + 255 * highlight));
+            finalB = Math.min(255, Math.round(finalB + 255 * highlight));
+          }
+        }
+
+        data[idx] = finalR;
+        data[idx + 1] = finalG;
+        data[idx + 2] = finalB;
+        data[idx + 3] = alpha;
+      }
+    }
+  }
+
+  gloveCtx.putImageData(imageData, 0, 0);
+}
+
+// Draw debug visualization of the mask
+function drawDebugMask(mask, maskWidth, maskHeight) {
+  debugCanvas.width = maskWidth;
+  debugCanvas.height = maskHeight;
+
+  const imageData = debugCtx.createImageData(maskWidth, maskHeight);
+  const data = imageData.data;
+
+  for (let i = 0; i < mask.length; i++) {
+    const idx = i * 4;
+    const val = mask[i];
+    data[idx] = val;     // R
+    data[idx + 1] = 0;   // G
+    data[idx + 2] = val; // B
+    data[idx + 3] = val > 0 ? 200 : 0; // A
+  }
+
+  debugCtx.putImageData(imageData, 0, 0);
 }
 
 // Prepare video canvas
@@ -924,9 +1050,11 @@ function prepareVideoCanvas() {
     videoCanvas.height = videoH;
     gloveCanvas.width = videoW;
     gloveCanvas.height = videoH;
+    processCanvas.width = Math.round(videoW * PROCESS_SCALE);
+    processCanvas.height = Math.round(videoH * PROCESS_SCALE);
   }
 
-  // Draw video frame (mirrored)
+  // Draw mirrored video
   videoCtx.save();
   videoCtx.translate(videoCanvas.width, 0);
   videoCtx.scale(-1, 1);
@@ -934,51 +1062,63 @@ function prepareVideoCanvas() {
   videoCtx.restore();
 }
 
-// Calculate tracking quality metric
-function getTrackingQuality(landmarks) {
-  // Check variance in z-coordinates (depth consistency)
-  const zValues = landmarks.map(l => l.z);
-  const avgZ = zValues.reduce((a, b) => a + b, 0) / zValues.length;
-  const variance = zValues.reduce((sum, z) => sum + Math.pow(z - avgZ, 2), 0) / zValues.length;
-
-  // Lower variance = more stable tracking
-  if (variance < 0.001) return 'Excellent';
-  if (variance < 0.003) return 'Good';
-  if (variance < 0.006) return 'Fair';
-  return 'Poor';
-}
-
 // Handle hand tracking results
 function onHandResults(results) {
   prepareVideoCanvas();
 
-  // Clear glove canvas
-  gloveCtx.clearRect(0, 0, gloveCanvas.width, gloveCanvas.height);
-
-  // Update hand count
   const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
   handCountSpan.innerText = numHands;
 
-  // Draw gloves for each detected hand
-  if (results.multiHandLandmarks) {
-    // Calculate average quality
-    let quality = '--';
-    if (numHands > 0) {
-      quality = getTrackingQuality(results.multiHandLandmarks[0]);
-    }
-    qualitySpan.innerText = quality;
+  if (numHands === 0) {
+    currentLandmarks = null;
+    handBounds = null;
+    gloveCtx.clearRect(0, 0, gloveCanvas.width, gloveCanvas.height);
 
-    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-      drawGlove(
-        gloveCtx,
-        results.multiHandLandmarks[i],
-        gloveCanvas.width,
-        gloveCanvas.height,
-        i
-      );
+    if (config.showDebug) {
+      debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
     }
   } else {
-    qualitySpan.innerText = '--';
+    // Process each hand
+    for (let i = 0; i < numHands; i++) {
+      currentLandmarks = results.multiHandLandmarks[i];
+      handBounds = getHandBounds(currentLandmarks, videoCanvas.width, videoCanvas.height);
+
+      // Draw scaled-down image for processing
+      processCtx.save();
+      processCtx.translate(processCanvas.width, 0);
+      processCtx.scale(-1, 1);
+      processCtx.drawImage(videoElement, 0, 0, processCanvas.width, processCanvas.height);
+      processCtx.restore();
+
+      const imageData = processCtx.getImageData(0, 0, processCanvas.width, processCanvas.height);
+
+      // Handle calibration
+      if (isCalibrating) {
+        processCalibrationFrame(imageData, handBounds);
+      }
+
+      // Create and draw mask
+      const mask = createSkinMask(
+        imageData,
+        handBounds,
+        currentLandmarks,
+        videoCanvas.width,
+        videoCanvas.height
+      );
+
+      drawGloveOverlay(
+        mask,
+        processCanvas.width,
+        processCanvas.height,
+        videoCanvas.width,
+        videoCanvas.height,
+        handBounds
+      );
+
+      if (config.showDebug) {
+        drawDebugMask(mask, processCanvas.width, processCanvas.height);
+      }
+    }
   }
 
   // Update FPS
@@ -996,12 +1136,11 @@ async function initApp() {
   try {
     statusDiv.innerText = "Requesting camera access...";
 
-    // Request camera with high resolution
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
         width: { ideal: 1280 },
         height: { ideal: 720 },
-        frameRate: { ideal: 60 }
+        frameRate: { ideal: 30 }
       }
     });
 
@@ -1019,7 +1158,7 @@ async function initApp() {
       maxNumHands: 2,
       modelComplexity: 1,
       minDetectionConfidence: 0.7,
-      minTrackingConfidence: 0.6
+      minTrackingConfidence: 0.5
     });
 
     hands.onResults(onHandResults);
@@ -1034,21 +1173,22 @@ async function initApp() {
     });
 
     await camera.start();
-    statusDiv.innerText = "Ready - Show your hands!";
+    statusDiv.innerText = "Ready! Click 'Calibrate Skin Tone' for best results.";
 
-    // Hide status after a delay
     setTimeout(() => {
-      statusDiv.style.opacity = '0.5';
-    }, 3000);
+      if (!skinParams.calibrated) {
+        statusDiv.innerText = "Tip: Calibrate your skin tone for better detection";
+      }
+    }, 5000);
 
   } catch (error) {
     console.error("Initialization error:", error);
     statusDiv.innerText = "Error: " + error.message;
-    alert("Failed to start: " + error.message + "\n\nPlease ensure camera access is allowed.");
+    alert("Failed to start: " + error.message);
   }
 }
 
-// Start application
+// Start
 window.onload = initApp;
 
 </script>
