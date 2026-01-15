@@ -278,14 +278,6 @@
       <input type="range" id="lengthSegments" min="3" max="12" step="1" value="6">
     </div>
 
-    <div class="control-group">
-      <label>
-        <span>Width Adjust</span>
-        <span class="value-display" id="widthValue">1.0</span>
-      </label>
-      <input type="range" id="fingerWidth" min="0.5" max="1.5" step="0.05" value="1.0">
-    </div>
-
     <div class="section-header">Rendering</div>
     <div class="control-group">
       <label>
@@ -375,7 +367,6 @@ let config = {
   wireColor: [0, 255, 255],
   ringSegments: 8,
   lengthSegments: 6,
-  fingerWidth: 1.0,
   lineOpacity: 0.8,
   lineWidth: 1.5,
   depthEffect: 0.5,
@@ -395,7 +386,14 @@ let particles = [];
 const PARTICLE_COUNT = 50;
 const PARTICLE_LIFETIME = 1000; // ms
 let lastTouchTime = 0;
-const TOUCH_COOLDOWN = 300; // ms between explosions
+const TOUCH_COOLDOWN = 500; // ms between explosions
+
+// Collision detection state
+let touchFrameCount = 0;
+const TOUCH_FRAMES_REQUIRED = 3; // Must be touching for 3 frames to trigger
+let prevTip1 = null;
+let prevTip2 = null;
+let lastFingerWidths = null;
 
 // Landmark indices
 const WRIST = 0;
@@ -431,11 +429,6 @@ document.getElementById('ringSegments').oninput = (e) => {
 document.getElementById('lengthSegments').oninput = (e) => {
   config.lengthSegments = parseInt(e.target.value);
   document.getElementById('lengthValue').innerText = config.lengthSegments;
-};
-
-document.getElementById('fingerWidth').oninput = (e) => {
-  config.fingerWidth = parseFloat(e.target.value);
-  document.getElementById('widthValue').innerText = config.fingerWidth.toFixed(1);
 };
 
 document.getElementById('lineOpacity').oninput = (e) => {
@@ -526,7 +519,7 @@ function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, max
 
     // Taper toward tip
     const taper = 1 - t * 0.4;
-    const radius = baseWidth * taper * config.fingerWidth;
+    const radius = baseWidth * taper;
 
     // Get perpendicular direction
     const { px, py } = getPerpendicularBasis(p1, p2);
@@ -632,7 +625,7 @@ function drawLine(p1, p2, minZ, maxZ) {
 function drawJoint(point, minZ, maxZ) {
   const { opacity, width } = getDepthModifiers(point.z, minZ, maxZ);
   const [r, g, b] = config.wireColor;
-  const size = 4 * width * config.fingerWidth;
+  const size = 4 * width;
 
   // Glow
   if (config.glowEffect) {
@@ -752,35 +745,93 @@ function updateAndDrawParticles() {
   }
 }
 
-// Check if two hands' index fingertips are touching
-function checkFingerTouch(hands, w, h) {
-  if (hands.length < 2) return null;
+// Calculate 3D distance between two points (includes Z depth)
+function distance3D(p1, p2, w, h) {
+  // Z is normalized roughly -0.1 to 0.1, scale it to be comparable to screen coords
+  const zScale = Math.min(w, h) * 0.5;
+  const dz = (p2.z - p1.z) * zScale;
+  return Math.sqrt(
+    Math.pow(p2.x - p1.x, 2) +
+    Math.pow(p2.y - p1.y, 2) +
+    Math.pow(dz, 2)
+  );
+}
 
-  // Get index fingertip positions for both hands
+// Calculate fingertip radius from finger width
+function getFingertipRadius(hands, w, h) {
+  // Calculate finger widths for both hands and average
+  const widths1 = calculateFingerWidths(hands[0], w, h);
+  const widths2 = calculateFingerWidths(hands[1], w, h);
+
+  // Index fingertip radius is roughly the finger width
+  const avgIndexWidth = (widths1.index + widths2.index) / 2;
+
+  // Store for use in collision
+  lastFingerWidths = { w1: widths1, w2: widths2 };
+
+  return avgIndexWidth;
+}
+
+// Check if fingertips are moving toward each other (velocity-based)
+function areFingertipsApproaching(tip1, tip2) {
+  if (!prevTip1 || !prevTip2) return true; // Can't determine, assume yes
+
+  const prevDist = distance(prevTip1, prevTip2);
+  const currDist = distance(tip1, tip2);
+
+  // They're approaching if current distance is less than previous
+  return currDist <= prevDist;
+}
+
+// Sphere collision detection with actual fingertip sizes
+function checkFingerTouch(hands, w, h) {
+  if (hands.length < 2) {
+    touchFrameCount = 0;
+    prevTip1 = null;
+    prevTip2 = null;
+    return null;
+  }
+
+  // Get index fingertip positions for both hands (with Z)
   const tip1 = landmarkToScreen(hands[0][INDEX_TIP], w, h);
   const tip2 = landmarkToScreen(hands[1][INDEX_TIP], w, h);
 
-  // Calculate distance between fingertips
-  const dist = distance(tip1, tip2);
+  // Calculate actual fingertip radius from hand landmarks
+  const fingertipRadius = getFingertipRadius(hands, w, h);
 
-  // Calculate a dynamic threshold based on hand size
-  const hand1Size = distance(
-    landmarkToScreen(hands[0][0], w, h),
-    landmarkToScreen(hands[0][9], w, h)
-  );
-  const hand2Size = distance(
-    landmarkToScreen(hands[1][0], w, h),
-    landmarkToScreen(hands[1][9], w, h)
-  );
-  const avgHandSize = (hand1Size + hand2Size) / 2;
-  const touchThreshold = avgHandSize * 0.06; // ~6% of hand size - fingers must actually touch
+  // Sphere collision: touching when distance < sum of radii
+  // Use slightly smaller collision radius for accuracy (80% of visual radius)
+  const collisionRadius = fingertipRadius * 0.8;
+  const touchThreshold = collisionRadius * 2; // Sum of both fingertip radii
 
-  if (dist < touchThreshold) {
-    // Return midpoint between the two fingertips
-    return {
-      x: (tip1.x + tip2.x) / 2,
-      y: (tip1.y + tip2.y) / 2
-    };
+  // Calculate 3D distance (includes depth)
+  const dist3D = distance3D(tip1, tip2, w, h);
+
+  // Also check 2D distance as sanity check
+  const dist2D = distance(tip1, tip2);
+
+  // Check if fingers are close enough AND approaching each other
+  const isTouching = dist3D < touchThreshold && dist2D < touchThreshold;
+  const isApproaching = areFingertipsApproaching(tip1, tip2);
+
+  // Update previous positions for velocity tracking
+  prevTip1 = { ...tip1 };
+  prevTip2 = { ...tip2 };
+
+  if (isTouching) {
+    touchFrameCount++;
+
+    // Only trigger after sustained contact for required frames
+    if (touchFrameCount >= TOUCH_FRAMES_REQUIRED) {
+      // Return midpoint between the two fingertips
+      return {
+        x: (tip1.x + tip2.x) / 2,
+        y: (tip1.y + tip2.y) / 2
+      };
+    }
+  } else {
+    // Reset counter if not touching
+    touchFrameCount = Math.max(0, touchFrameCount - 1); // Gradual decay
   }
 
   return null;
