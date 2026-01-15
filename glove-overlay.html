@@ -773,7 +773,7 @@ function checkFingerTouch(hands, w, h) {
     landmarkToScreen(hands[1][9], w, h)
   );
   const avgHandSize = (hand1Size + hand2Size) / 2;
-  const touchThreshold = avgHandSize * 0.15; // ~15% of hand size
+  const touchThreshold = avgHandSize * 0.06; // ~6% of hand size - fingers must actually touch
 
   if (dist < touchThreshold) {
     // Return midpoint between the two fingertips
@@ -801,18 +801,18 @@ function calculateFingerWidths(landmarks, w, h) {
   }
   const avgFingerSpacing = totalSpacing / (fingerBases.length - 1);
 
-  // Finger width is roughly 70% of the spacing between finger bases
-  const baseFingerWidth = avgFingerSpacing * 0.35;
+  // Finger width is roughly 20% of the spacing between finger bases
+  const baseFingerWidth = avgFingerSpacing * 0.20;
 
   // Calculate thumb width separately (wider)
-  const thumbWidth = baseFingerWidth * 1.4;
+  const thumbWidth = baseFingerWidth * 1.3;
 
   return {
     thumb: thumbWidth,
-    index: baseFingerWidth * 1.0,
-    middle: baseFingerWidth * 1.05,
-    ring: baseFingerWidth * 0.95,
-    pinky: baseFingerWidth * 0.75
+    index: baseFingerWidth * 0.95,
+    middle: baseFingerWidth * 1.0,
+    ring: baseFingerWidth * 0.9,
+    pinky: baseFingerWidth * 0.7
   };
 }
 
