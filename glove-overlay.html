@@ -390,8 +390,16 @@ let config = {
 let frameCount = 0;
 let lastTime = performance.now();
 
+// Particle system
+let particles = [];
+const PARTICLE_COUNT = 50;
+const PARTICLE_LIFETIME = 1000; // ms
+let lastTouchTime = 0;
+const TOUCH_COOLDOWN = 300; // ms between explosions
+
 // Landmark indices
 const WRIST = 0;
+const INDEX_TIP = 8;
 const FINGERS = [
   { name: 'thumb', indices: [1, 2, 3, 4] },
   { name: 'index', indices: [5, 6, 7, 8] },
@@ -652,6 +660,132 @@ function distance(p1, p2) {
   return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
 }
 
+// Particle class
+class Particle {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.birthTime = performance.now();
+
+    // Random velocity in all directions
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 6;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+
+    // Random size and color variation
+    this.size = 2 + Math.random() * 4;
+    this.hue = Math.random() * 60 - 30; // Variation around base color
+    this.brightness = 0.8 + Math.random() * 0.2;
+
+    // Gravity and friction
+    this.gravity = 0.1;
+    this.friction = 0.98;
+  }
+
+  update() {
+    this.vy += this.gravity;
+    this.vx *= this.friction;
+    this.vy *= this.friction;
+    this.x += this.vx;
+    this.y += this.vy;
+  }
+
+  getAge() {
+    return performance.now() - this.birthTime;
+  }
+
+  isAlive() {
+    return this.getAge() < PARTICLE_LIFETIME;
+  }
+
+  draw(ctx) {
+    const age = this.getAge();
+    const lifeRatio = 1 - (age / PARTICLE_LIFETIME);
+    const [r, g, b] = config.wireColor;
+
+    // Fade out over lifetime
+    const alpha = lifeRatio * this.brightness;
+
+    // Size shrinks over time
+    const currentSize = this.size * lifeRatio;
+
+    // Outer glow
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, currentSize * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner bright core
+    ctx.fillStyle = `rgba(${Math.min(255, r + 50)}, ${Math.min(255, g + 50)}, ${Math.min(255, b + 50)}, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, currentSize, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White hot center
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.8})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, currentSize * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Create particle explosion at point
+function createExplosion(x, y) {
+  const now = performance.now();
+  if (now - lastTouchTime < TOUCH_COOLDOWN) return;
+  lastTouchTime = now;
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(new Particle(x, y));
+  }
+}
+
+// Update and draw all particles
+function updateAndDrawParticles() {
+  // Update particles
+  particles = particles.filter(p => p.isAlive());
+
+  for (const particle of particles) {
+    particle.update();
+    particle.draw(ctx);
+  }
+}
+
+// Check if two hands' index fingertips are touching
+function checkFingerTouch(hands, w, h) {
+  if (hands.length < 2) return null;
+
+  // Get index fingertip positions for both hands
+  const tip1 = landmarkToScreen(hands[0][INDEX_TIP], w, h);
+  const tip2 = landmarkToScreen(hands[1][INDEX_TIP], w, h);
+
+  // Calculate distance between fingertips
+  const dist = distance(tip1, tip2);
+
+  // Calculate a dynamic threshold based on hand size
+  const hand1Size = distance(
+    landmarkToScreen(hands[0][0], w, h),
+    landmarkToScreen(hands[0][9], w, h)
+  );
+  const hand2Size = distance(
+    landmarkToScreen(hands[1][0], w, h),
+    landmarkToScreen(hands[1][9], w, h)
+  );
+  const avgHandSize = (hand1Size + hand2Size) / 2;
+  const touchThreshold = avgHandSize * 0.15; // ~15% of hand size
+
+  if (dist < touchThreshold) {
+    // Return midpoint between the two fingertips
+    return {
+      x: (tip1.x + tip2.x) / 2,
+      y: (tip1.y + tip2.y) / 2
+    };
+  }
+
+  return null;
+}
+
 // Calculate actual finger widths from landmark positions
 function calculateFingerWidths(landmarks, w, h) {
   // Get screen positions of finger bases and tips
@@ -790,12 +924,29 @@ function onHandResults(results) {
   handCountSpan.innerText = numHands;
 
   if (numHands > 0) {
+    // Draw wireframes for all hands
     for (const landmarks of results.multiHandLandmarks) {
       drawHandWireframe(landmarks, wireframeCanvas.width, wireframeCanvas.height);
+    }
+
+    // Check for index fingertip touch between two hands
+    if (numHands >= 2) {
+      const touchPoint = checkFingerTouch(
+        results.multiHandLandmarks,
+        wireframeCanvas.width,
+        wireframeCanvas.height
+      );
+
+      if (touchPoint) {
+        createExplosion(touchPoint.x, touchPoint.y);
+      }
     }
   } else {
     vertexCountSpan.innerText = '0';
   }
+
+  // Update and draw particles (always, even if no hands)
+  updateAndDrawParticles();
 
   // FPS
   frameCount++;
