@@ -362,6 +362,11 @@ const handCountSpan = document.getElementById('handCount');
 const fpsSpan = document.getElementById('fps');
 const vertexCountSpan = document.getElementById('vertexCount');
 
+// Create hidden canvas for skin mask processing
+const skinCanvas = document.createElement('canvas');
+const skinCtx = skinCanvas.getContext('2d', { willReadFrequently: true });
+let skinMaskData = null;
+
 // Configuration
 let config = {
   wireColor: [0, 255, 255],
@@ -499,7 +504,7 @@ function getDepthModifiers(z, minZ, maxZ) {
   return { opacity, width };
 }
 
-// Generate finger tube mesh
+// Generate finger tube mesh with edge-detected radius
 function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, maxZ) {
   const points = fingerIndices.map(i => landmarkToScreen(landmarks[i], w, h));
   const mesh = { rings: [], longitudinals: [] };
@@ -507,6 +512,9 @@ function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, max
   // Generate ring segments along the finger
   const numRings = config.lengthSegments;
   const numPoints = config.ringSegments;
+
+  // Max radius for ray casting (based on estimated finger width)
+  const maxSearchRadius = baseWidth * 3;
 
   for (let r = 0; r <= numRings; r++) {
     const t = r / numRings;
@@ -517,12 +525,14 @@ function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, max
     const p2 = points[segmentIndex + 1];
     const center = lerp(p1, p2, localT);
 
-    // Taper toward tip
-    const taper = 1 - t * 0.4;
-    const radius = baseWidth * taper;
-
-    // Get perpendicular direction
+    // Get perpendicular direction for edge detection
     const { px, py } = getPerpendicularBasis(p1, p2);
+
+    // MEASURE ACTUAL RADIUS using skin edge detection
+    const measuredRadius = measureFingerRadius(center.x, center.y, px, py, maxSearchRadius);
+
+    // Use measured radius (with small padding for visual coverage)
+    const radius = measuredRadius * 1.1;
 
     // Generate ring points
     const ring = [];
@@ -531,14 +541,14 @@ function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, max
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
 
-      // Elliptical cross-section (flatter)
+      // Elliptical cross-section (slightly flatter)
       const rx = radius * 1.0;
-      const ry = radius * 0.7;
+      const ry = radius * 0.8;
 
       ring.push({
         x: center.x + px * cos * rx + py * sin * ry * 0.3,
         y: center.y + py * cos * rx + px * sin * ry * 0.3,
-        z: center.z + sin * 0.01 // Slight depth variation
+        z: center.z + sin * 0.01
       });
     }
 
@@ -652,6 +662,147 @@ function drawJoint(point, minZ, maxZ) {
 function distance(p1, p2) {
   return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
 }
+
+// ============ SKIN SEGMENTATION & EDGE DETECTION ============
+
+// Generate skin mask from video frame
+function generateSkinMask(w, h) {
+  if (skinCanvas.width !== w || skinCanvas.height !== h) {
+    skinCanvas.width = w;
+    skinCanvas.height = h;
+  }
+
+  // Draw mirrored video to skin canvas
+  skinCtx.save();
+  skinCtx.translate(w, 0);
+  skinCtx.scale(-1, 1);
+  skinCtx.drawImage(videoElement, 0, 0, w, h);
+  skinCtx.restore();
+
+  // Get image data
+  const imageData = skinCtx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+
+  // Create binary skin mask
+  const mask = new Uint8Array(w * h);
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+
+    // Convert RGB to YCrCb
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+    const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+
+    // Skin detection using YCrCb thresholds
+    const isSkin = (
+      cr >= 133 && cr <= 173 &&
+      cb >= 77 && cb <= 127 &&
+      y > 80
+    );
+
+    mask[i / 4] = isSkin ? 255 : 0;
+  }
+
+  // Simple morphological operations (dilate then erode for noise reduction)
+  const dilated = dilate(mask, w, h, 2);
+  const cleaned = erode(dilated, w, h, 1);
+
+  skinMaskData = { mask: cleaned, width: w, height: h };
+  return skinMaskData;
+}
+
+// Dilate the mask
+function dilate(mask, w, h, radius) {
+  const result = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let found = false;
+      for (let dy = -radius; dy <= radius && !found; dy++) {
+        for (let dx = -radius; dx <= radius && !found; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+            if (mask[ny * w + nx] > 0) found = true;
+          }
+        }
+      }
+      result[y * w + x] = found ? 255 : 0;
+    }
+  }
+  return result;
+}
+
+// Erode the mask
+function erode(mask, w, h, radius) {
+  const result = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let allSkin = true;
+      for (let dy = -radius; dy <= radius && allSkin; dy++) {
+        for (let dx = -radius; dx <= radius && allSkin; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+            if (mask[ny * w + nx] === 0) allSkin = false;
+          } else {
+            allSkin = false;
+          }
+        }
+      }
+      result[y * w + x] = allSkin ? 255 : 0;
+    }
+  }
+  return result;
+}
+
+// Check if a point is skin
+function isSkinAt(x, y) {
+  if (!skinMaskData) return false;
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  if (ix < 0 || ix >= skinMaskData.width || iy < 0 || iy >= skinMaskData.height) return false;
+  return skinMaskData.mask[iy * skinMaskData.width + ix] > 0;
+}
+
+// Measure finger radius at a point by casting rays outward from center
+function measureFingerRadius(centerX, centerY, perpX, perpY, maxRadius) {
+  if (!skinMaskData) return maxRadius * 0.5;
+
+  // Cast rays in both perpendicular directions to find edges
+  let radius1 = 0;
+  let radius2 = 0;
+
+  // Ray in positive perpendicular direction
+  for (let r = 1; r <= maxRadius; r++) {
+    const x = centerX + perpX * r;
+    const y = centerY + perpY * r;
+    if (!isSkinAt(x, y)) {
+      radius1 = r - 1;
+      break;
+    }
+    radius1 = r;
+  }
+
+  // Ray in negative perpendicular direction
+  for (let r = 1; r <= maxRadius; r++) {
+    const x = centerX - perpX * r;
+    const y = centerY - perpY * r;
+    if (!isSkinAt(x, y)) {
+      radius2 = r - 1;
+      break;
+    }
+    radius2 = r;
+  }
+
+  // Use the average of both directions, with minimum threshold
+  const measuredRadius = (radius1 + radius2) / 2;
+  return Math.max(measuredRadius, 3); // Minimum 3 pixels
+}
+
+// ============ END SKIN SEGMENTATION ============
 
 // Particle class
 class Particle {
@@ -975,6 +1126,9 @@ function onHandResults(results) {
   handCountSpan.innerText = numHands;
 
   if (numHands > 0) {
+    // Generate skin mask for edge detection (used by finger mesh)
+    generateSkinMask(wireframeCanvas.width, wireframeCanvas.height);
+
     // Draw wireframes for all hands
     for (const landmarks of results.multiHandLandmarks) {
       drawHandWireframe(landmarks, wireframeCanvas.width, wireframeCanvas.height);
