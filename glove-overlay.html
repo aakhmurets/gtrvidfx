@@ -504,6 +504,26 @@ function getDepthModifiers(z, minZ, maxZ) {
   return { opacity, width };
 }
 
+// Smooth an array of values using a simple moving average
+function smoothRadii(radii, passes = 2) {
+  let result = [...radii];
+  for (let pass = 0; pass < passes; pass++) {
+    const smoothed = [];
+    for (let i = 0; i < result.length; i++) {
+      if (i === 0) {
+        smoothed.push((result[0] * 2 + result[1]) / 3);
+      } else if (i === result.length - 1) {
+        smoothed.push((result[i] * 2 + result[i - 1]) / 3);
+      } else {
+        // Weighted average: current point has more weight
+        smoothed.push((result[i - 1] + result[i] * 2 + result[i + 1]) / 4);
+      }
+    }
+    result = smoothed;
+  }
+  return result;
+}
+
 // Generate finger tube mesh with edge-detected radius
 function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, maxZ) {
   const points = fingerIndices.map(i => landmarkToScreen(landmarks[i], w, h));
@@ -516,6 +536,8 @@ function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, max
   // Max radius for ray casting (based on estimated finger width)
   const maxSearchRadius = baseWidth * 3;
 
+  // First pass: collect all ring data (centers, perpendiculars, and measured radii)
+  const ringData = [];
   for (let r = 0; r <= numRings; r++) {
     const t = r / numRings;
     const segmentIndex = Math.min(Math.floor(t * (points.length - 1)), points.length - 2);
@@ -524,15 +546,24 @@ function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, max
     const p1 = points[segmentIndex];
     const p2 = points[segmentIndex + 1];
     const center = lerp(p1, p2, localT);
-
-    // Get perpendicular direction for edge detection
     const { px, py } = getPerpendicularBasis(p1, p2);
 
-    // MEASURE ACTUAL RADIUS using skin edge detection
+    // Measure actual radius using skin edge detection
     const measuredRadius = measureFingerRadius(center.x, center.y, px, py, maxSearchRadius);
 
-    // Use measured radius (with small padding for visual coverage)
-    const radius = measuredRadius * 1.1;
+    ringData.push({ center, px, py, radius: measuredRadius });
+  }
+
+  // Extract radii and apply smoothing
+  const rawRadii = ringData.map(d => d.radius);
+  const smoothedRadii = smoothRadii(rawRadii, 2);
+
+  // Second pass: generate rings using smoothed radii
+  for (let r = 0; r <= numRings; r++) {
+    const { center, px, py } = ringData[r];
+
+    // Use smoothed radius with small padding for visual coverage
+    const radius = smoothedRadii[r] * 1.05;
 
     // Generate ring points
     const ring = [];
@@ -543,7 +574,7 @@ function generateFingerMesh(landmarks, fingerIndices, baseWidth, w, h, minZ, max
 
       // Elliptical cross-section (slightly flatter)
       const rx = radius * 1.0;
-      const ry = radius * 0.8;
+      const ry = radius * 0.85;
 
       ring.push({
         x: center.x + px * cos * rx + py * sin * ry * 0.3,
@@ -758,48 +789,98 @@ function erode(mask, w, h, radius) {
   return result;
 }
 
-// Check if a point is skin
+// Check if a point is skin (with bilinear interpolation for sub-pixel accuracy)
 function isSkinAt(x, y) {
   if (!skinMaskData) return false;
   const ix = Math.floor(x);
   const iy = Math.floor(y);
-  if (ix < 0 || ix >= skinMaskData.width || iy < 0 || iy >= skinMaskData.height) return false;
+  if (ix < 0 || ix >= skinMaskData.width - 1 || iy < 0 || iy >= skinMaskData.height - 1) return false;
   return skinMaskData.mask[iy * skinMaskData.width + ix] > 0;
 }
 
-// Measure finger radius at a point by casting rays outward from center
+// Get skin confidence at point (0-1) using bilinear interpolation
+function getSkinConfidence(x, y) {
+  if (!skinMaskData) return 0;
+  const w = skinMaskData.width;
+  const h = skinMaskData.height;
+
+  if (x < 0 || x >= w - 1 || y < 0 || y >= h - 1) return 0;
+
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+
+  // Bilinear interpolation of the 4 surrounding pixels
+  const v00 = skinMaskData.mask[iy * w + ix] > 0 ? 1 : 0;
+  const v10 = skinMaskData.mask[iy * w + ix + 1] > 0 ? 1 : 0;
+  const v01 = skinMaskData.mask[(iy + 1) * w + ix] > 0 ? 1 : 0;
+  const v11 = skinMaskData.mask[(iy + 1) * w + ix + 1] > 0 ? 1 : 0;
+
+  const top = v00 * (1 - fx) + v10 * fx;
+  const bottom = v01 * (1 - fx) + v11 * fx;
+  return top * (1 - fy) + bottom * fy;
+}
+
+// Measure finger radius with sub-pixel precision and multi-ray sampling
 function measureFingerRadius(centerX, centerY, perpX, perpY, maxRadius) {
   if (!skinMaskData) return maxRadius * 0.5;
 
-  // Cast rays in both perpendicular directions to find edges
-  let radius1 = 0;
-  let radius2 = 0;
+  const stepSize = 0.5; // Sub-pixel stepping for precision
+  const edgeThreshold = 0.5; // Confidence threshold for edge detection
 
-  // Ray in positive perpendicular direction
-  for (let r = 1; r <= maxRadius; r++) {
-    const x = centerX + perpX * r;
-    const y = centerY + perpY * r;
-    if (!isSkinAt(x, y)) {
-      radius1 = r - 1;
-      break;
+  // Cast multiple rays at slightly different angles for robustness
+  const angleOffsets = [-0.15, -0.075, 0, 0.075, 0.15]; // radians
+  let totalRadius1 = 0;
+  let totalRadius2 = 0;
+  let validSamples = 0;
+
+  for (const angleOffset of angleOffsets) {
+    // Rotate perpendicular vector slightly
+    const cos = Math.cos(angleOffset);
+    const sin = Math.sin(angleOffset);
+    const px = perpX * cos - perpY * sin;
+    const py = perpX * sin + perpY * cos;
+
+    // Ray in positive direction
+    let r1 = 0;
+    for (let r = stepSize; r <= maxRadius; r += stepSize) {
+      const x = centerX + px * r;
+      const y = centerY + py * r;
+      const confidence = getSkinConfidence(x, y);
+      if (confidence < edgeThreshold) {
+        // Interpolate exact edge position
+        r1 = r - stepSize * (1 - confidence);
+        break;
+      }
+      r1 = r;
     }
-    radius1 = r;
+
+    // Ray in negative direction
+    let r2 = 0;
+    for (let r = stepSize; r <= maxRadius; r += stepSize) {
+      const x = centerX - px * r;
+      const y = centerY - py * r;
+      const confidence = getSkinConfidence(x, y);
+      if (confidence < edgeThreshold) {
+        r2 = r - stepSize * (1 - confidence);
+        break;
+      }
+      r2 = r;
+    }
+
+    totalRadius1 += r1;
+    totalRadius2 += r2;
+    validSamples++;
   }
 
-  // Ray in negative perpendicular direction
-  for (let r = 1; r <= maxRadius; r++) {
-    const x = centerX - perpX * r;
-    const y = centerY - perpY * r;
-    if (!isSkinAt(x, y)) {
-      radius2 = r - 1;
-      break;
-    }
-    radius2 = r;
-  }
+  // Average all ray samples
+  const avgRadius1 = totalRadius1 / validSamples;
+  const avgRadius2 = totalRadius2 / validSamples;
 
-  // Use the average of both directions, with minimum threshold
-  const measuredRadius = (radius1 + radius2) / 2;
-  return Math.max(measuredRadius, 3); // Minimum 3 pixels
+  // Use average of both directions
+  const measuredRadius = (avgRadius1 + avgRadius2) / 2;
+  return Math.max(measuredRadius, 2); // Minimum 2 pixels
 }
 
 // ============ END SKIN SEGMENTATION ============
