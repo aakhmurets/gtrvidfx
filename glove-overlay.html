@@ -395,7 +395,7 @@ const TOUCH_COOLDOWN = 500; // ms between explosions
 
 // Collision detection state
 let touchFrameCount = 0;
-const TOUCH_FRAMES_REQUIRED = 3; // Must be touching for 3 frames to trigger
+const TOUCH_FRAMES_REQUIRED = 2; // Must be touching for 2 frames to trigger
 let prevTip1 = null;
 let prevTip2 = null;
 let lastFingerWidths = null;
@@ -1028,25 +1028,27 @@ function checkFingerTouch(hands, w, h) {
   const tip1 = landmarkToScreen(hands[0][INDEX_TIP], w, h);
   const tip2 = landmarkToScreen(hands[1][INDEX_TIP], w, h);
 
-  // Calculate actual fingertip radius from hand landmarks
-  const fingertipRadius = getFingertipRadius(hands, w, h);
+  // Calculate hand sizes for threshold
+  const hand1Wrist = landmarkToScreen(hands[0][0], w, h);
+  const hand1Middle = landmarkToScreen(hands[0][9], w, h);
+  const hand2Wrist = landmarkToScreen(hands[1][0], w, h);
+  const hand2Middle = landmarkToScreen(hands[1][9], w, h);
 
-  // Sphere collision: touching when distance < sum of radii
-  // Use slightly smaller collision radius for accuracy (80% of visual radius)
-  const collisionRadius = fingertipRadius * 0.8;
-  const touchThreshold = collisionRadius * 2; // Sum of both fingertip radii
+  const hand1Size = distance(hand1Wrist, hand1Middle);
+  const hand2Size = distance(hand2Wrist, hand2Middle);
+  const avgHandSize = (hand1Size + hand2Size) / 2;
 
-  // Calculate 3D distance (includes depth)
-  const dist3D = distance3D(tip1, tip2, w, h);
+  // Touch threshold: fingertip is roughly 8% of hand size, so touching = 16%
+  // Add extra margin for reliability
+  const touchThreshold = avgHandSize * 0.18;
 
-  // Also check 2D distance as sanity check
+  // Calculate 2D distance (simpler and more reliable)
   const dist2D = distance(tip1, tip2);
 
-  // Check if fingers are close enough AND approaching each other
-  const isTouching = dist3D < touchThreshold && dist2D < touchThreshold;
-  const isApproaching = areFingertipsApproaching(tip1, tip2);
+  // Check if fingers are close enough
+  const isTouching = dist2D < touchThreshold;
 
-  // Update previous positions for velocity tracking
+  // Update previous positions
   prevTip1 = { ...tip1 };
   prevTip2 = { ...tip2 };
 
@@ -1055,6 +1057,7 @@ function checkFingerTouch(hands, w, h) {
 
     // Only trigger after sustained contact for required frames
     if (touchFrameCount >= TOUCH_FRAMES_REQUIRED) {
+      touchFrameCount = 0; // Reset after triggering
       // Return midpoint between the two fingertips
       return {
         x: (tip1.x + tip2.x) / 2,
@@ -1063,7 +1066,7 @@ function checkFingerTouch(hands, w, h) {
     }
   } else {
     // Reset counter if not touching
-    touchFrameCount = Math.max(0, touchFrameCount - 1); // Gradual decay
+    touchFrameCount = 0;
   }
 
   return null;
